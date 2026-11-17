@@ -141,6 +141,96 @@ patients.MapPost("/{id:guid}/archive", async (Guid id, HttpContext context, Pati
     return archived is null ? Results.NotFound() : Results.Ok(ToResponse(archived));
 });
 
+patients.MapGet("/{patientId:guid}/appointments/next", async (Guid patientId, HttpContext context, PatientStore store) =>
+{
+    var workspaceId = GetWorkspaceId(context.User);
+    if (await store.FindAsync(workspaceId, patientId) is null)
+        return Results.NotFound();
+
+    var appointment = await store.FindNextAppointmentAsync(workspaceId, patientId, DateTimeOffset.UtcNow);
+    return appointment is null
+        ? Results.NoContent()
+        : Results.Ok(ToAppointmentResponse(appointment));
+});
+
+var sessions = patients.MapGroup("/{patientId:guid}/sessions");
+
+sessions.MapGet("", async (Guid patientId, HttpContext context, PatientStore store) =>
+{
+    var records = await store.ListSessionsAsync(GetWorkspaceId(context.User), patientId);
+    return records is null ? Results.NotFound() : Results.Ok(records.Select(ToSessionResponse));
+});
+
+sessions.MapPost("", async (Guid patientId, SessionInput input, HttpContext context, PatientStore store) =>
+{
+    var errors = ValidateSession(input);
+    if (errors.Count > 0)
+        return Results.ValidationProblem(errors);
+
+    var now = DateTimeOffset.UtcNow;
+    var session = new SessionRecord(
+        Guid.NewGuid(), GetWorkspaceId(context.User), patientId,
+        input.SessionDate, input.Note.Trim(), now, now);
+    var saved = await store.AddSessionAsync(session, GetActorName(context.User));
+    return saved is null
+        ? Results.NotFound()
+        : Results.Created($"/api/patients/{patientId}/sessions/{saved.Id}", ToSessionResponse(saved));
+});
+
+sessions.MapPut("/{sessionId:guid}", async (Guid patientId, Guid sessionId, SessionInput input, HttpContext context, PatientStore store) =>
+{
+    var errors = ValidateSession(input);
+    if (errors.Count > 0)
+        return Results.ValidationProblem(errors);
+
+    var updated = await store.UpdateSessionAsync(
+        GetWorkspaceId(context.User), patientId, sessionId,
+        input.SessionDate, input.Note.Trim(), GetActorName(context.User));
+    return updated is null ? Results.NotFound() : Results.Ok(ToSessionResponse(updated));
+});
+
+sessions.MapGet("/{sessionId:guid}/versions", async (Guid patientId, Guid sessionId, HttpContext context, PatientStore store) =>
+{
+    var versions = await store.ListSessionVersionsAsync(GetWorkspaceId(context.User), patientId, sessionId);
+    return versions is null ? Results.NotFound() : Results.Ok(versions.Select(ToSessionVersionResponse));
+});
+
+var patientTasks = patients.MapGroup("/{patientId:guid}/tasks");
+
+patientTasks.MapGet("", async (Guid patientId, HttpContext context, PatientStore store, bool? includeCompleted) =>
+{
+    var records = await store.ListPatientTasksAsync(GetWorkspaceId(context.User), patientId, includeCompleted == true);
+    return records is null ? Results.NotFound() : Results.Ok(records.Select(ToPatientTaskResponse));
+});
+
+patientTasks.MapPost("", async (Guid patientId, PatientTaskInput input, HttpContext context, PatientStore store) =>
+{
+    var errors = ValidatePatientTask(input);
+    if (errors.Count > 0)
+        return Results.ValidationProblem(errors);
+
+    var now = DateTimeOffset.UtcNow;
+    var task = new PatientTaskRecord(
+        Guid.NewGuid(), GetWorkspaceId(context.User), patientId,
+        input.Description.Trim(), input.DueDate, false, now, now);
+    var saved = await store.AddPatientTaskAsync(task);
+    return saved is null
+        ? Results.NotFound()
+        : Results.Created($"/api/patients/{patientId}/tasks/{saved.Id}", ToPatientTaskResponse(saved));
+});
+
+patientTasks.MapPut("/{taskId:guid}", async (Guid patientId, Guid taskId, PatientTaskInput input, HttpContext context, PatientStore store) =>
+{
+    var errors = ValidatePatientTask(input);
+    if (errors.Count > 0)
+        return Results.ValidationProblem(errors);
+
+    var updated = await store.UpdatePatientTaskAsync(
+        GetWorkspaceId(context.User), patientId, taskId,
+        input.Description.Trim(), input.DueDate, input.IsCompleted);
+    return updated is null ? Results.NotFound() : Results.Ok(ToPatientTaskResponse(updated));
+});
+
 var appointments = app.MapGroup("/api/appointments").RequireAuthorization();
 
 appointments.MapGet("", async (HttpContext context, PatientStore store, bool? includeCancelled) =>
@@ -199,6 +289,10 @@ app.Run();
 static string GetWorkspaceId(ClaimsPrincipal user) =>
     user.FindFirstValue("workspace_id") ?? throw new InvalidOperationException("Workspace não encontrado na sessão.");
 
+static string GetActorName(ClaimsPrincipal user) =>
+    user.Identity?.Name ?? user.FindFirstValue(ClaimTypes.NameIdentifier)
+    ?? throw new InvalidOperationException("Responsável pela alteração não encontrado na sessão.");
+
 static bool FixedTimeEquals(string left, string right)
 {
     var leftHash = SHA256.HashData(Encoding.UTF8.GetBytes(left));
@@ -213,6 +307,28 @@ static Dictionary<string, string[]> ValidateAppointment(AppointmentInput input)
         errors[nameof(input.PatientId)] = ["Selecione um paciente."];
     if (input.StartsAt == default || input.EndsAt == default || input.EndsAt <= input.StartsAt)
         errors[nameof(input.EndsAt)] = ["O término deve ser posterior ao início do compromisso."];
+    return errors;
+}
+
+static Dictionary<string, string[]> ValidateSession(SessionInput input)
+{
+    var errors = new Dictionary<string, string[]>();
+    if (input.SessionDate == default)
+        errors[nameof(input.SessionDate)] = ["Informe a data da sessão."];
+    if (string.IsNullOrWhiteSpace(input.Note))
+        errors[nameof(input.Note)] = ["Informe uma anotação para a sessão."];
+    else if (input.Note.Trim().Length > 20000)
+        errors[nameof(input.Note)] = ["A anotação deve ter no máximo 20000 caracteres."];
+    return errors;
+}
+
+static Dictionary<string, string[]> ValidatePatientTask(PatientTaskInput input)
+{
+    var errors = new Dictionary<string, string[]>();
+    if (string.IsNullOrWhiteSpace(input.Description))
+        errors[nameof(input.Description)] = ["Informe a descrição da pendência."];
+    else if (input.Description.Trim().Length > 2000)
+        errors[nameof(input.Description)] = ["A descrição deve ter no máximo 2000 caracteres."];
     return errors;
 }
 
@@ -238,10 +354,24 @@ static AppointmentResponse ToAppointmentResponse(AppointmentRecord record) => ne
     record.Id, record.PatientId, record.PatientName, record.StartsAt, record.EndsAt,
     record.IsCancelled, record.CreatedAt, record.UpdatedAt);
 
+static SessionResponse ToSessionResponse(SessionRecord record) => new(
+    record.Id, record.SessionDate, record.Note, record.CreatedAt, record.UpdatedAt);
+
+static SessionVersionResponse ToSessionVersionResponse(SessionVersionRecord record) => new(
+    record.Version, record.SessionDate, record.Note, record.ChangedAt, record.ChangedBy);
+
+static PatientTaskResponse ToPatientTaskResponse(PatientTaskRecord record) => new(
+    record.Id, record.Description, record.DueDate, record.IsCompleted, record.CreatedAt, record.UpdatedAt);
+
 public sealed record LoginRequest(string Email, string Password);
 public sealed record UserResponse(string Name, string Email);
 public sealed record PatientInput(string Name, string? Contact);
 public sealed record PatientResponse(Guid Id, string Name, string? Contact, bool IsArchived, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 public sealed record AppointmentInput(Guid PatientId, DateTimeOffset StartsAt, DateTimeOffset EndsAt);
 public sealed record AppointmentResponse(Guid Id, Guid PatientId, string PatientName, DateTimeOffset StartsAt, DateTimeOffset EndsAt, bool IsCancelled, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record SessionInput(DateOnly SessionDate, string Note);
+public sealed record SessionResponse(Guid Id, DateOnly SessionDate, string Note, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record SessionVersionResponse(int Version, DateOnly SessionDate, string Note, DateTimeOffset ChangedAt, string ChangedBy);
+public sealed record PatientTaskInput(string Description, DateOnly? DueDate, bool IsCompleted);
+public sealed record PatientTaskResponse(Guid Id, string Description, DateOnly? DueDate, bool IsCompleted, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 

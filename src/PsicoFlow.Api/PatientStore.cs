@@ -98,6 +98,56 @@ public sealed class PatientStore
             }
         }
 
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT COALESCE(MAX(Version), 0) FROM SchemaMigrations;";
+            var version = Convert.ToInt32(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+            if (version < 3)
+            {
+                using var transaction = connection.BeginTransaction();
+                command.Transaction = transaction;
+                command.CommandText = """
+                    CREATE TABLE Sessions (
+                        Id TEXT NOT NULL PRIMARY KEY,
+                        WorkspaceId TEXT NOT NULL,
+                        PatientId TEXT NOT NULL REFERENCES Patients (Id),
+                        SessionDate TEXT NOT NULL,
+                        Note TEXT NOT NULL,
+                        CreatedAt TEXT NOT NULL,
+                        UpdatedAt TEXT NOT NULL
+                    );
+                    CREATE INDEX IX_Sessions_WorkspaceId_PatientId_SessionDate
+                        ON Sessions (WorkspaceId, PatientId, SessionDate DESC);
+                    CREATE TABLE SessionVersions (
+                        SessionId TEXT NOT NULL REFERENCES Sessions (Id),
+                        Version INTEGER NOT NULL,
+                        SessionDate TEXT NOT NULL,
+                        Note TEXT NOT NULL,
+                        ChangedAt TEXT NOT NULL,
+                        ChangedBy TEXT NOT NULL,
+                        PRIMARY KEY (SessionId, Version)
+                    );
+                    CREATE TABLE PatientTasks (
+                        Id TEXT NOT NULL PRIMARY KEY,
+                        WorkspaceId TEXT NOT NULL,
+                        PatientId TEXT NOT NULL REFERENCES Patients (Id),
+                        Description TEXT NOT NULL,
+                        DueDate TEXT NULL,
+                        IsCompleted INTEGER NOT NULL DEFAULT 0 CHECK (IsCompleted IN (0, 1)),
+                        CreatedAt TEXT NOT NULL,
+                        UpdatedAt TEXT NOT NULL
+                    );
+                    CREATE INDEX IX_PatientTasks_WorkspaceId_PatientId_Status_DueDate
+                        ON PatientTasks (WorkspaceId, PatientId, IsCompleted, DueDate);
+                    INSERT INTO SchemaMigrations (Version, AppliedAt) VALUES (3, $appliedAt);
+                    """;
+                command.Parameters.Clear();
+                command.Parameters.AddWithValue("$appliedAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+                await command.ExecuteNonQueryAsync();
+                transaction.Commit();
+            }
+        }
+
         await ImportLegacyJsonAsync(connection);
     }
 
@@ -120,6 +170,215 @@ public sealed class PatientStore
         while (await reader.ReadAsync())
             appointments.Add(ReadAppointment(reader));
         return appointments;
+    }
+
+    public async Task<AppointmentRecord?> FindNextAppointmentAsync(string workspaceId, Guid patientId, DateTimeOffset from)
+    {
+        await using var connection = await OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT a.Id, a.WorkspaceId, a.PatientId, p.Name, a.StartsAt, a.EndsAt, a.IsCancelled, a.CreatedAt, a.UpdatedAt
+            FROM Appointments a
+            INNER JOIN Patients p ON p.Id = a.PatientId AND p.WorkspaceId = a.WorkspaceId
+            WHERE a.WorkspaceId = $workspaceId AND a.PatientId = $patientId
+                AND a.IsCancelled = 0 AND a.StartsAt >= $from
+            ORDER BY a.StartsAt
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$workspaceId", workspaceId);
+        command.Parameters.AddWithValue("$patientId", patientId.ToString("D"));
+        command.Parameters.AddWithValue("$from", ToDatabaseTime(from));
+        await using var reader = await command.ExecuteReaderAsync();
+        return await reader.ReadAsync() ? ReadAppointment(reader) : null;
+    }
+
+    public async Task<IReadOnlyList<SessionRecord>?> ListSessionsAsync(string workspaceId, Guid patientId)
+    {
+        await using var connection = await OpenConnectionAsync();
+        if (await FindAsync(connection, workspaceId, patientId) is null)
+            return null;
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, WorkspaceId, PatientId, SessionDate, Note, CreatedAt, UpdatedAt
+            FROM Sessions
+            WHERE WorkspaceId = $workspaceId AND PatientId = $patientId
+            ORDER BY SessionDate DESC, CreatedAt DESC;
+            """;
+        command.Parameters.AddWithValue("$workspaceId", workspaceId);
+        command.Parameters.AddWithValue("$patientId", patientId.ToString("D"));
+
+        var sessions = new List<SessionRecord>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            sessions.Add(ReadSession(reader));
+        return sessions;
+    }
+
+    public async Task<SessionRecord?> AddSessionAsync(SessionRecord session, string changedBy)
+    {
+        await using var connection = await OpenConnectionAsync();
+        using var transaction = connection.BeginTransaction();
+        if (!await PatientExistsAsync(connection, transaction, session.WorkspaceId, session.PatientId))
+            return null;
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                INSERT INTO Sessions (Id, WorkspaceId, PatientId, SessionDate, Note, CreatedAt, UpdatedAt)
+                VALUES ($id, $workspaceId, $patientId, $sessionDate, $note, $createdAt, $updatedAt);
+                """;
+            AddSessionParameters(command, session);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        await AddSessionVersionAsync(connection, transaction, session, 1, changedBy, session.CreatedAt);
+        transaction.Commit();
+        return session;
+    }
+
+    public async Task<SessionRecord?> UpdateSessionAsync(
+        string workspaceId,
+        Guid patientId,
+        Guid sessionId,
+        DateOnly sessionDate,
+        string note,
+        string changedBy)
+    {
+        await using var connection = await OpenConnectionAsync();
+        using var transaction = connection.BeginTransaction();
+        var existing = await FindSessionAsync(connection, transaction, workspaceId, patientId, sessionId);
+        if (existing is null)
+            return null;
+
+        var updated = existing with
+        {
+            SessionDate = sessionDate,
+            Note = note,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                UPDATE Sessions
+                SET SessionDate = $sessionDate, Note = $note, UpdatedAt = $updatedAt
+                WHERE WorkspaceId = $workspaceId AND PatientId = $patientId AND Id = $id;
+                """;
+            command.Parameters.AddWithValue("$sessionDate", ToDatabaseDate(updated.SessionDate));
+            command.Parameters.AddWithValue("$note", updated.Note);
+            command.Parameters.AddWithValue("$updatedAt", ToDatabaseTime(updated.UpdatedAt));
+            command.Parameters.AddWithValue("$workspaceId", workspaceId);
+            command.Parameters.AddWithValue("$patientId", patientId.ToString("D"));
+            command.Parameters.AddWithValue("$id", sessionId.ToString("D"));
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var version = await GetNextSessionVersionAsync(connection, transaction, sessionId);
+        await AddSessionVersionAsync(connection, transaction, updated, version, changedBy, updated.UpdatedAt);
+        transaction.Commit();
+        return updated;
+    }
+
+    public async Task<IReadOnlyList<SessionVersionRecord>?> ListSessionVersionsAsync(
+        string workspaceId,
+        Guid patientId,
+        Guid sessionId)
+    {
+        await using var connection = await OpenConnectionAsync();
+        if (await FindSessionAsync(connection, null, workspaceId, patientId, sessionId) is null)
+            return null;
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Version, SessionDate, Note, ChangedAt, ChangedBy
+            FROM SessionVersions
+            WHERE SessionId = $sessionId
+            ORDER BY Version DESC;
+            """;
+        command.Parameters.AddWithValue("$sessionId", sessionId.ToString("D"));
+
+        var versions = new List<SessionVersionRecord>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            versions.Add(ReadSessionVersion(reader));
+        return versions;
+    }
+
+    public async Task<IReadOnlyList<PatientTaskRecord>?> ListPatientTasksAsync(
+        string workspaceId,
+        Guid patientId,
+        bool includeCompleted)
+    {
+        await using var connection = await OpenConnectionAsync();
+        if (await FindAsync(connection, workspaceId, patientId) is null)
+            return null;
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, WorkspaceId, PatientId, Description, DueDate, IsCompleted, CreatedAt, UpdatedAt
+            FROM PatientTasks
+            WHERE WorkspaceId = $workspaceId AND PatientId = $patientId
+                AND ($includeCompleted = 1 OR IsCompleted = 0)
+            ORDER BY IsCompleted, DueDate IS NULL, DueDate, CreatedAt DESC;
+            """;
+        command.Parameters.AddWithValue("$workspaceId", workspaceId);
+        command.Parameters.AddWithValue("$patientId", patientId.ToString("D"));
+        command.Parameters.AddWithValue("$includeCompleted", includeCompleted ? 1 : 0);
+
+        var tasks = new List<PatientTaskRecord>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            tasks.Add(ReadPatientTask(reader));
+        return tasks;
+    }
+
+    public async Task<PatientTaskRecord?> AddPatientTaskAsync(PatientTaskRecord task)
+    {
+        await using var connection = await OpenConnectionAsync();
+        using var transaction = connection.BeginTransaction();
+        if (!await PatientExistsAsync(connection, transaction, task.WorkspaceId, task.PatientId))
+            return null;
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO PatientTasks (Id, WorkspaceId, PatientId, Description, DueDate, IsCompleted, CreatedAt, UpdatedAt)
+            VALUES ($id, $workspaceId, $patientId, $description, $dueDate, $isCompleted, $createdAt, $updatedAt);
+            """;
+        AddPatientTaskParameters(command, task);
+        await command.ExecuteNonQueryAsync();
+        transaction.Commit();
+        return task;
+    }
+
+    public async Task<PatientTaskRecord?> UpdatePatientTaskAsync(
+        string workspaceId,
+        Guid patientId,
+        Guid taskId,
+        string description,
+        DateOnly? dueDate,
+        bool isCompleted)
+    {
+        await using var connection = await OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE PatientTasks
+            SET Description = $description, DueDate = $dueDate, IsCompleted = $isCompleted, UpdatedAt = $updatedAt
+            WHERE WorkspaceId = $workspaceId AND PatientId = $patientId AND Id = $id;
+            """;
+        command.Parameters.AddWithValue("$description", description);
+        command.Parameters.AddWithValue("$dueDate", (object?)dueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? DBNull.Value);
+        command.Parameters.AddWithValue("$isCompleted", isCompleted ? 1 : 0);
+        command.Parameters.AddWithValue("$updatedAt", ToDatabaseTime(DateTimeOffset.UtcNow));
+        command.Parameters.AddWithValue("$workspaceId", workspaceId);
+        command.Parameters.AddWithValue("$patientId", patientId.ToString("D"));
+        command.Parameters.AddWithValue("$id", taskId.ToString("D"));
+        return await command.ExecuteNonQueryAsync() == 0
+            ? null
+            : await FindPatientTaskAsync(connection, workspaceId, patientId, taskId);
     }
 
     public async Task<AppointmentSaveResult> AddAppointmentAsync(AppointmentRecord appointment)
@@ -359,6 +618,150 @@ public sealed class PatientStore
         return await command.ExecuteScalarAsync() is not null;
     }
 
+    private static async Task<bool> PatientExistsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string workspaceId,
+        Guid patientId)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT 1 FROM Patients WHERE WorkspaceId = $workspaceId AND Id = $patientId;";
+        command.Parameters.AddWithValue("$workspaceId", workspaceId);
+        command.Parameters.AddWithValue("$patientId", patientId.ToString("D"));
+        return await command.ExecuteScalarAsync() is not null;
+    }
+
+    private static async Task<SessionRecord?> FindSessionAsync(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        string workspaceId,
+        Guid patientId,
+        Guid sessionId)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT Id, WorkspaceId, PatientId, SessionDate, Note, CreatedAt, UpdatedAt
+            FROM Sessions
+            WHERE WorkspaceId = $workspaceId AND PatientId = $patientId AND Id = $id;
+            """;
+        command.Parameters.AddWithValue("$workspaceId", workspaceId);
+        command.Parameters.AddWithValue("$patientId", patientId.ToString("D"));
+        command.Parameters.AddWithValue("$id", sessionId.ToString("D"));
+        await using var reader = await command.ExecuteReaderAsync();
+        return await reader.ReadAsync() ? ReadSession(reader) : null;
+    }
+
+    private static async Task<int> GetNextSessionVersionAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        Guid sessionId)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT COALESCE(MAX(Version), 0) + 1 FROM SessionVersions WHERE SessionId = $sessionId;";
+        command.Parameters.AddWithValue("$sessionId", sessionId.ToString("D"));
+        return Convert.ToInt32(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+    }
+
+    private static async Task AddSessionVersionAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        SessionRecord session,
+        int version,
+        string changedBy,
+        DateTimeOffset changedAt)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO SessionVersions (SessionId, Version, SessionDate, Note, ChangedAt, ChangedBy)
+            VALUES ($sessionId, $version, $sessionDate, $note, $changedAt, $changedBy);
+            """;
+        command.Parameters.AddWithValue("$sessionId", session.Id.ToString("D"));
+        command.Parameters.AddWithValue("$version", version);
+        command.Parameters.AddWithValue("$sessionDate", ToDatabaseDate(session.SessionDate));
+        command.Parameters.AddWithValue("$note", session.Note);
+        command.Parameters.AddWithValue("$changedAt", ToDatabaseTime(changedAt));
+        command.Parameters.AddWithValue("$changedBy", changedBy);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<PatientTaskRecord?> FindPatientTaskAsync(
+        SqliteConnection connection,
+        string workspaceId,
+        Guid patientId,
+        Guid taskId)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, WorkspaceId, PatientId, Description, DueDate, IsCompleted, CreatedAt, UpdatedAt
+            FROM PatientTasks
+            WHERE WorkspaceId = $workspaceId AND PatientId = $patientId AND Id = $id;
+            """;
+        command.Parameters.AddWithValue("$workspaceId", workspaceId);
+        command.Parameters.AddWithValue("$patientId", patientId.ToString("D"));
+        command.Parameters.AddWithValue("$id", taskId.ToString("D"));
+        await using var reader = await command.ExecuteReaderAsync();
+        return await reader.ReadAsync() ? ReadPatientTask(reader) : null;
+    }
+
+    private static void AddSessionParameters(SqliteCommand command, SessionRecord session)
+    {
+        command.Parameters.AddWithValue("$id", session.Id.ToString("D"));
+        command.Parameters.AddWithValue("$workspaceId", session.WorkspaceId);
+        command.Parameters.AddWithValue("$patientId", session.PatientId.ToString("D"));
+        command.Parameters.AddWithValue("$sessionDate", ToDatabaseDate(session.SessionDate));
+        command.Parameters.AddWithValue("$note", session.Note);
+        command.Parameters.AddWithValue("$createdAt", ToDatabaseTime(session.CreatedAt));
+        command.Parameters.AddWithValue("$updatedAt", ToDatabaseTime(session.UpdatedAt));
+    }
+
+    private static void AddPatientTaskParameters(SqliteCommand command, PatientTaskRecord task)
+    {
+        command.Parameters.AddWithValue("$id", task.Id.ToString("D"));
+        command.Parameters.AddWithValue("$workspaceId", task.WorkspaceId);
+        command.Parameters.AddWithValue("$patientId", task.PatientId.ToString("D"));
+        command.Parameters.AddWithValue("$description", task.Description);
+        command.Parameters.AddWithValue("$dueDate", (object?)task.DueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? DBNull.Value);
+        command.Parameters.AddWithValue("$isCompleted", task.IsCompleted ? 1 : 0);
+        command.Parameters.AddWithValue("$createdAt", ToDatabaseTime(task.CreatedAt));
+        command.Parameters.AddWithValue("$updatedAt", ToDatabaseTime(task.UpdatedAt));
+    }
+
+    private static string ToDatabaseDate(DateOnly value) =>
+        value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    private static DateOnly ReadDatabaseDate(string value) =>
+        DateOnly.ParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    private static SessionRecord ReadSession(SqliteDataReader reader) => new(
+        Guid.Parse(reader.GetString(0)),
+        reader.GetString(1),
+        Guid.Parse(reader.GetString(2)),
+        ReadDatabaseDate(reader.GetString(3)),
+        reader.GetString(4),
+        DateTimeOffset.Parse(reader.GetString(5), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+        DateTimeOffset.Parse(reader.GetString(6), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind));
+
+    private static SessionVersionRecord ReadSessionVersion(SqliteDataReader reader) => new(
+        reader.GetInt32(0),
+        ReadDatabaseDate(reader.GetString(1)),
+        reader.GetString(2),
+        DateTimeOffset.Parse(reader.GetString(3), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+        reader.GetString(4));
+
+    private static PatientTaskRecord ReadPatientTask(SqliteDataReader reader) => new(
+        Guid.Parse(reader.GetString(0)),
+        reader.GetString(1),
+        Guid.Parse(reader.GetString(2)),
+        reader.GetString(3),
+        reader.IsDBNull(4) ? null : ReadDatabaseDate(reader.GetString(4)),
+        reader.GetInt64(5) != 0,
+        DateTimeOffset.Parse(reader.GetString(6), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+        DateTimeOffset.Parse(reader.GetString(7), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind));
+
     private static async Task<bool> HasConflictAsync(SqliteConnection connection, SqliteTransaction transaction, AppointmentRecord appointment, Guid? excludingId)
     {
         await using var command = connection.CreateCommand();
@@ -495,3 +898,29 @@ public enum AppointmentSaveStatus
 }
 
 public sealed record AppointmentSaveResult(AppointmentSaveStatus Status, AppointmentRecord? Appointment);
+
+public sealed record SessionRecord(
+    Guid Id,
+    string WorkspaceId,
+    Guid PatientId,
+    DateOnly SessionDate,
+    string Note,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
+public sealed record SessionVersionRecord(
+    int Version,
+    DateOnly SessionDate,
+    string Note,
+    DateTimeOffset ChangedAt,
+    string ChangedBy);
+
+public sealed record PatientTaskRecord(
+    Guid Id,
+    string WorkspaceId,
+    Guid PatientId,
+    string Description,
+    DateOnly? DueDate,
+    bool IsCompleted,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);

@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="960" viewBox="0 0 1440 960">
+  <title>PsicoFlow — proposta visual para a lista de pacientes</title>
+  <desc>Simulação com dados sintéticos e paleta indigo, porcelain, taupe, mint e teal.</desc>
+  <defs>
+	<style>
+	  text { font-family: 'Segoe UI', Arial, sans-serif; fill: #2A3C5B; }
+	  .label { font-size: 13px; font-weight: 600; }
+	  .small { font-size: 13px; fill: #657187; }
+	  .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 1.8px; fill: #276851; }
+	  .heading { font-size: 33px; font-weight: 700; letter-spacing: -.5px; }
+	  .subhead { font-size: 16px; fill: #606E80; }
+	  .nav { font-size: 15px; fill: #DDE6EE; }
+	  .nav-current { font-size: 15px; font-weight: 700; fill: #FFFFFF; }
+	  .cardtitle { font-size: 18px; font-weight: 700; }
+	  .rule { stroke: #E5EAE7; stroke-width: 1; }
+	  .button { font-size: 14px; fill: #FFFFFF; font-weight: 700; }
+	  .link { font-size: 13px; font-weight: 600; fill: #2A3C5B; }
+	</style>
+	<filter id="shadow" x="-20%" y="-30%" width="140%" height="170%"><feDropShadow dx="0" dy="8" stdDeviation="15" flood-color="#2A3C5B" flood-opacity=".05"/></filter>
+  </defs>
+  <rect width="1440" height="960" fill="#F6F7F4"/>
+  <rect x="0" y="0" width="256" height="960" fill="#2A3C5B"/>
+  <rect x="28" y="30" width="40" height="40" rx="13" fill="#4FB286"/>
+  <path d="M38 52c7-1 8-11 20-12-2 10-7 17-17 16M43 54l9-8" fill="none" stroke="#2A3C5B" stroke-width="2.3" stroke-linecap="round"/>
+  <text x="80" y="56" font-size="22" font-weight="700" fill="#FFFFFF" style="fill:#fff">psicoflow</text>
+  <text x="30" y="126" font-size="10" font-weight="700" letter-spacing="1.7" style="fill:#BECADB">WORKSPACE</text>
+  <rect x="16" y="145" width="224" height="52" rx="12" fill="#FFFFFF" fill-opacity=".13"/>
+  <rect x="16" y="157" width="4" height="28" rx="2" fill="#4FB286"/>
+  <circle cx="46" cy="170" r="9" fill="none" stroke="#A8E3C8" stroke-width="1.7"/>
+  <path d="M40 172h12M46 166v12" stroke="#A8E3C8" stroke-width="1.6"/>
+  <text x="70" y="175" class="nav-current">Pacientes</text>
+  <rect x="37" y="220" width="18" height="17" rx="3" fill="none" stroke="#CBD7E1" stroke-width="1.5"/>
+  <path d="M37 226h18M42 216v6M50 216v6" stroke="#CBD7E1" stroke-width="1.5"/>
+  <text x="70" y="234" class="nav">Agenda</text>
+  <line x1="28" y1="852" x2="228" y2="852" stroke="#FFFFFF" stroke-opacity=".2"/>
+  <circle cx="48" cy="895" r="20" fill="#A78682"/>
+  <text x="48" y="900" text-anchor="middle" font-size="15" font-weight="700" style="fill:#fff">D</text>
+  <text x="80" y="890" font-size="13" font-weight="700" style="fill:#fff">Dra. Demo</text>
+  <text x="80" y="911" font-size="12" style="fill:#C1CDDA">Workspace individual</text>
+  <rect x="256" y="0" width="1184" height="76" fill="#FFFFFF"/>
+  <line x1="256" y1="76" x2="1440" y2="76" stroke="#E3E9E4"/>
+  <text x="314" y="46" class="small">Workspace <tspan fill="#A78682"> / </tspan> <tspan fill="#2A3C5B" font-weight="600">Pacientes</tspan></text>
+  <circle cx="1268" cy="39" r="4" fill="#3C896D"/><text x="1280" y="44" class="small">Acesso privado</text>
+  <text x="320" y="138" class="eyebrow">SEU CONSULTÓRIO</text>
+  <text x="320" y="183" class="heading">Pacientes</text>
+  <text x="320" y="213" class="subhead">Tudo o que você precisa para cuidar, em um só lugar.</text>
+  <rect x="1151" y="157" width="213" height="50" rx="10" fill="#2A3C5B"/>
+  <text x="1173" y="188" font-size="20" style="fill:#fff">＋</text><text x="1202" y="188" class="button">Novo paciente</text>
+  <rect x="320" y="252" width="310" height="114" rx="16" fill="#FFFFFF" stroke="#E4EAE6" filter="url(#shadow)"/>
+  <rect x="340" y="274" width="54" height="54" rx="16" fill="#E1F3EA"/>
+  <circle cx="367" cy="295" r="7" fill="none" stroke="#276851" stroke-width="2"/><path d="M355 314c2-9 22-9 24 0" fill="none" stroke="#276851" stroke-width="2" stroke-linecap="round"/>
+  <text x="411" y="294" class="small">PACIENTES ATIVOS</text><text x="411" y="326" font-size="26" font-weight="700">12</text>
+  <rect x="648" y="252" width="716" height="114" rx="16" fill="#E9F4EE"/>
+  <rect x="668" y="274" width="42" height="42" rx="13" fill="#FFFFFF"/>
+  <circle cx="689" cy="295" r="10" fill="none" stroke="#276851" stroke-width="1.6"/><text x="689" y="300" text-anchor="middle" font-size="14" font-weight="700" fill="#276851">i</text>
+  <text x="730" y="292" font-size="15" font-weight="700">Um cuidado mais organizado</text><text x="730" y="316" class="small">Acesse os registros e pendências ao selecionar um paciente.</text>
+  <rect x="320" y="392" width="1044" height="451" rx="18" fill="#FFFFFF" stroke="#E4EAE6" filter="url(#shadow)"/>
+  <text x="348" y="433" class="cardtitle">Todos os pacientes</text>
+  <text x="348" y="455" class="small">Pesquise pelo nome ou contato.</text>
+  <rect x="1160" y="416" width="36" height="20" rx="10" fill="#DCE3DF"/><circle cx="1170" cy="426" r="8" fill="#FFFFFF"/><text x="1206" y="431" class="small">Mostrar arquivados</text>
+  <rect x="348" y="477" width="988" height="48" rx="9" fill="#F9FAF8" stroke="#DDE5E0"/>
+  <circle cx="370" cy="500" r="7" fill="none" stroke="#667989" stroke-width="1.8"/><path d="M375 505l5 5" stroke="#667989" stroke-width="1.8" stroke-linecap="round"/>
+  <text x="395" y="505" font-size="14" fill="#667989">Buscar paciente...</text>
+  <line x1="348" y1="543" x2="1336" y2="543" class="rule"/>
+  <text x="348" y="571" font-size="11" font-weight="700" letter-spacing="1" fill="#657187">PACIENTE</text><text x="929" y="571" font-size="11" font-weight="700" letter-spacing="1" fill="#657187">ATUALIZADO</text><text x="1187" y="571" font-size="11" font-weight="700" letter-spacing="1" fill="#657187">AÇÕES</text>
+  <line x1="348" y1="590" x2="1336" y2="590" class="rule"/>
+  <circle cx="370" cy="631" r="21" fill="#F2E9E7"/><text x="370" y="636" text-anchor="middle" font-size="14" font-weight="700">AC</text>
+  <text x="406" y="626" font-size="15" font-weight="700">Ana Costa</text><text x="406" y="648" class="small">ana.exemplo@demo.local</text><text x="929" y="636" class="small">16 nov 2026</text><text x="1187" y="636" class="link">Editar</text><text x="1263" y="636" class="small">Arquivar</text>
+  <line x1="348" y1="674" x2="1336" y2="674" class="rule"/>
+  <circle cx="370" cy="714" r="21" fill="#E1F3EA"/><text x="370" y="719" text-anchor="middle" font-size="14" font-weight="700">BM</text>
+  <text x="406" y="709" font-size="15" font-weight="700">Bruno Martins</text><text x="406" y="731" class="small">bruno.exemplo@demo.local</text><text x="929" y="719" class="small">12 nov 2026</text><text x="1187" y="719" class="link">Editar</text><text x="1263" y="719" class="small">Arquivar</text>
+  <line x1="348" y1="757" x2="1336" y2="757" class="rule"/>
+  <circle cx="370" cy="796" r="21" fill="#E8EDF4"/><text x="370" y="801" text-anchor="middle" font-size="14" font-weight="700">CS</text>
+  <text x="406" y="791" font-size="15" font-weight="700">Camila Silva</text><text x="406" y="813" class="small">camila.exemplo@demo.local</text><text x="929" y="801" class="small">08 nov 2026</text><text x="1187" y="801" class="link">Editar</text><text x="1263" y="801" class="small">Arquivar</text>
+  <text x="322" y="884" class="small">◉  Dados sintéticos para demonstração · Não utilize dados reais nesta versão.</text>
+  <text x="1364" y="935" text-anchor="end" font-size="11" fill="#657187">SIMULAÇÃO VISUAL · NÃO INTERATIVA</text>
+</svg>
