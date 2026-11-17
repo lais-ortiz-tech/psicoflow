@@ -55,3 +55,10 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+.vs/
+**/bin/
+**/obj/
+web/node_modules/
+web/dist/
+src/PsicoFlow.Api/data/
