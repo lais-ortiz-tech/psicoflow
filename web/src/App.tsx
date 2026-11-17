@@ -6,8 +6,11 @@ import {
     faMagnifyingGlass,
     faNotesMedical,
     faCircleInfo,
-    faRightFromBracket
+    faRightFromBracket,
+    faAddressBook
 } from '@fortawesome/free-solid-svg-icons';
+
+const logoUrl = new URL('../img/logotipo.png', import.meta.url).href
 
 type User = { name: string; email: string }
 type Patient = {
@@ -166,7 +169,12 @@ export default function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <a className="brand" href="#"><span className="brand-mark small">P</span><span>psicoflow</span></a>
+        <a className="brand" href="#">
+            <span className="brand-mark small">
+                <img src={logoUrl} alt="Logotipo Psicoflow" />
+            </span>
+            <span>psicoflow</span>
+        </a>
         <p className="nav-caption">WORKSPACE</p>
         <a className="nav-link selected" href="#patients"><span><FontAwesomeIcon icon={faNotesMedical} /></span> Pacientes</a>
         <div className="sidebar-bottom">
@@ -205,7 +213,7 @@ export default function App() {
             </div>
             <div className="search-box"><span><FontAwesomeIcon icon={faMagnifyingGlass} /></span><input aria-label="Pesquisar pacientes" placeholder="Buscar paciente…" value={search} onChange={(event) => setSearch(event.target.value)} /></div>
             <div className="patient-list">
-              {patients.length === 0 ? <div className="empty-state"><span className="empty-icon">?</span><strong>{search ? 'Nenhum resultado encontrado' : includeArchived ? 'Nenhum cadastro arquivado' : 'Sua lista começa aqui'}</strong><p>{search ? 'Tente buscar por outro nome.' : 'Adicione o primeiro paciente para organizar seu workspace.'}</p>{!search && !includeArchived && <button className="button secondary" onClick={startCreate}>Cadastrar paciente</button>}</div> : patients.map((patient) => (
+              {patients.length === 0 ? <div className="empty-state"><span className="empty-icon"><FontAwesomeIcon icon={faAddressBook} /></span><strong>{search ? 'Nenhum resultado encontrado' : includeArchived ? 'Nenhum cadastro arquivado' : 'Sua lista começa aqui'}</strong><p>{search ? 'Tente buscar por outro nome.' : 'Adicione o primeiro paciente para organizar seu workspace.'}</p>{!search && !includeArchived && <button className="button secondary" onClick={startCreate}>Cadastrar paciente</button>}</div> : patients.map((patient) => (
                 <article className={`patient-row ${patient.isArchived ? 'archived' : ''}`} key={patient.id}>
                   <div className="patient-avatar">{patient.name.trim().slice(0, 1).toUpperCase()}</div>
                   <div className="patient-info"><strong>{patient.name}</strong><span>{patient.contact || 'Sem contato informado'}</span></div>
