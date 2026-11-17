@@ -141,6 +141,59 @@ patients.MapPost("/{id:guid}/archive", async (Guid id, HttpContext context, Pati
     return archived is null ? Results.NotFound() : Results.Ok(ToResponse(archived));
 });
 
+var appointments = app.MapGroup("/api/appointments").RequireAuthorization();
+
+appointments.MapGet("", async (HttpContext context, PatientStore store, bool? includeCancelled) =>
+{
+    var records = await store.ListAppointmentsAsync(GetWorkspaceId(context.User), includeCancelled == true);
+    return Results.Ok(records.Select(ToAppointmentResponse));
+});
+
+appointments.MapPost("", async (AppointmentInput input, HttpContext context, PatientStore store) =>
+{
+    var errors = ValidateAppointment(input);
+    if (errors.Count > 0)
+        return Results.ValidationProblem(errors);
+
+    var now = DateTimeOffset.UtcNow;
+    var appointment = new AppointmentRecord(
+        Guid.NewGuid(), GetWorkspaceId(context.User), input.PatientId,
+        "", input.StartsAt.ToUniversalTime(), input.EndsAt.ToUniversalTime(),
+        false, now, now);
+    var result = await store.AddAppointmentAsync(appointment);
+    return result.Status switch
+    {
+        AppointmentSaveStatus.Success => Results.Created($"/api/appointments/{appointment.Id}", ToAppointmentResponse(result.Appointment!)),
+        AppointmentSaveStatus.Conflict => Results.Conflict(new { title = "Este horário conflita com outro compromisso." }),
+        AppointmentSaveStatus.PatientUnavailable => Results.ValidationProblem(new Dictionary<string, string[]> { [nameof(input.PatientId)] = ["Selecione um paciente ativo do workspace."] }),
+        _ => throw new InvalidOperationException("Resultado inesperado ao criar compromisso.")
+    };
+});
+
+appointments.MapPut("/{id:guid}", async (Guid id, AppointmentInput input, HttpContext context, PatientStore store) =>
+{
+    var errors = ValidateAppointment(input);
+    if (errors.Count > 0)
+        return Results.ValidationProblem(errors);
+
+    var result = await store.UpdateAppointmentAsync(
+        GetWorkspaceId(context.User), id, input.PatientId, input.StartsAt.ToUniversalTime(), input.EndsAt.ToUniversalTime());
+    return result.Status switch
+    {
+        AppointmentSaveStatus.Success => Results.Ok(ToAppointmentResponse(result.Appointment!)),
+        AppointmentSaveStatus.Conflict => Results.Conflict(new { title = "Este horário conflita com outro compromisso." }),
+        AppointmentSaveStatus.PatientUnavailable => Results.ValidationProblem(new Dictionary<string, string[]> { [nameof(input.PatientId)] = ["Selecione um paciente ativo do workspace."] }),
+        AppointmentSaveStatus.NotFound => Results.NotFound(),
+        _ => throw new InvalidOperationException("Resultado inesperado ao editar compromisso.")
+    };
+});
+
+appointments.MapPost("/{id:guid}/cancel", async (Guid id, HttpContext context, PatientStore store) =>
+{
+    var cancelled = await store.CancelAppointmentAsync(GetWorkspaceId(context.User), id);
+    return cancelled is null ? Results.NotFound() : Results.Ok(ToAppointmentResponse(cancelled));
+});
+
 app.Run();
 
 static string GetWorkspaceId(ClaimsPrincipal user) =>
@@ -151,6 +204,16 @@ static bool FixedTimeEquals(string left, string right)
     var leftHash = SHA256.HashData(Encoding.UTF8.GetBytes(left));
     var rightHash = SHA256.HashData(Encoding.UTF8.GetBytes(right));
     return CryptographicOperations.FixedTimeEquals(leftHash, rightHash);
+}
+
+static Dictionary<string, string[]> ValidateAppointment(AppointmentInput input)
+{
+    var errors = new Dictionary<string, string[]>();
+    if (input.PatientId == Guid.Empty)
+        errors[nameof(input.PatientId)] = ["Selecione um paciente."];
+    if (input.StartsAt == default || input.EndsAt == default || input.EndsAt <= input.StartsAt)
+        errors[nameof(input.EndsAt)] = ["O término deve ser posterior ao início do compromisso."];
+    return errors;
 }
 
 static Dictionary<string, string[]> Validate(PatientInput input)
@@ -171,8 +234,14 @@ static string? NormalizeContact(string? contact) =>
 static PatientResponse ToResponse(PatientRecord record) => new(
     record.Id, record.Name, record.Contact, record.IsArchived, record.CreatedAt, record.UpdatedAt);
 
+static AppointmentResponse ToAppointmentResponse(AppointmentRecord record) => new(
+    record.Id, record.PatientId, record.PatientName, record.StartsAt, record.EndsAt,
+    record.IsCancelled, record.CreatedAt, record.UpdatedAt);
+
 public sealed record LoginRequest(string Email, string Password);
 public sealed record UserResponse(string Name, string Email);
 public sealed record PatientInput(string Name, string? Contact);
 public sealed record PatientResponse(Guid Id, string Name, string? Contact, bool IsArchived, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record AppointmentInput(Guid PatientId, DateTimeOffset StartsAt, DateTimeOffset EndsAt);
+public sealed record AppointmentResponse(Guid Id, Guid PatientId, string PatientName, DateTimeOffset StartsAt, DateTimeOffset EndsAt, bool IsCancelled, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 

@@ -20,7 +20,7 @@ body {
     min-height: 100vh
 }
 
-button, input {
+button, input, select {
     font: inherit
 }
 
@@ -228,8 +228,60 @@ button {
     display: flex;
     align-items: center;
     gap: 11px;
-    font-size: 13px
+    font-size: 13px;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    text-align: left
 }
+
+.appointment-row {
+    min-height: 76px;
+    border-top: 1px solid #f0f2f0;
+    display: flex;
+    align-items: center;
+    padding: 12px 22px;
+    gap: 14px
+}
+
+.appointment-date {
+    width: 52px;
+    min-width: 52px;
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+    color: #43805e
+}
+
+    .appointment-date strong {
+        font: 700 11px Manrope,sans-serif;
+        text-transform: uppercase
+    }
+
+    .appointment-date span {
+        font-size: 10px
+    }
+
+.appointment-row.cancelled {
+    background: #fcfcfb;
+    opacity: .75
+}
+
+.form-stack select {
+    width: 100%;
+    height: 43px;
+    border: 1px solid #dfe5e0;
+    border-radius: 8px;
+    padding: 0 12px;
+    outline: none;
+    color: #27372f;
+    background: #fff
+}
+
+    .form-stack select:focus {
+        border-color: #72a789;
+        box-shadow: 0 0 0 3px #dcece3
+    }
 
     .nav-link span {
         font-size: 16px
@@ -697,23 +749,31 @@ button {
         padding: 0
     }
 
-        .brand > span:last-child, .nav-caption, .nav-link:not(.selected) {
+        .brand > span:last-child, .nav-caption {
             display: none
         }
 
-    .nav-link.selected {
+    .nav-link {
         font-size: 0;
-        justify-content: center;
-        margin-top: 40px
+        justify-content: center
     }
 
-        .nav-link.selected span {
+        .nav-link:first-of-type {
+            margin-top: 40px
+        }
+
+        .nav-link span {
             font-size: 18px
         }
 
     .sidebar-bottom {
         justify-content: center;
         flex-wrap: wrap
+    }
+
+    .appointment-row {
+        padding: 10px 13px;
+        gap: 8px
     }
 
         .sidebar-bottom .user-label, .sidebar-bottom .icon-button {
