@@ -28,9 +28,15 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         };
     });
 builder.Services.AddAuthorization();
-builder.Services.AddSingleton(new PatientStore(builder.Configuration["Storage:FilePath"] ?? "data/patients.json"));
+var contentRoot = builder.Environment.ContentRootPath;
+var databasePath = Path.GetFullPath(builder.Configuration["Storage:DatabasePath"] ?? "data/psicoflow.db", contentRoot);
+var legacyJsonFilePath = Path.GetFullPath(
+    builder.Configuration["Storage:LegacyFilePath"] ?? builder.Configuration["Storage:FilePath"] ?? "data/patients.json",
+    contentRoot);
+builder.Services.AddSingleton(new PatientStore(databasePath, legacyJsonFilePath));
 
 var app = builder.Build();
+await app.Services.GetRequiredService<PatientStore>().InitializeAsync();
 
 app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
 {
