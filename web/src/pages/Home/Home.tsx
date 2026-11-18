@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowRight, faArrowUpRightFromSquare, faCalendarDays, faCircleDollarToSlot, faCircleInfo, faHospitalUser, faPlus, faWallet } from '@fortawesome/free-solid-svg-icons'
-import { api } from './api'
-import NumericText from './NumericText'
+import { api } from '../../api'
+import NumericText from '../../NumericText'
 import './Home.css'
 
 type Patient = { id: string }

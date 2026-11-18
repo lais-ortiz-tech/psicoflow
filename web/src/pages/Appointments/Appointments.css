@@ -1,0 +1,165 @@
+.agenda-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    margin-bottom: 30px
+}
+
+.agenda-heading h1 {
+    font: 400 38px/1.1 "Old Standard TT", serif;
+    margin: 0;
+    color: var(--color-indigo)
+}
+
+.agenda-summary {
+    color: var(--color-ink-muted);
+    margin: 12px 0 0;
+    font-size: 13px
+}
+
+.agenda-heading-actions {
+    display: flex;
+    align-items: center;
+    gap: 9px
+}
+
+.week-picker {
+    height: 42px;
+    display: flex;
+    align-items: center;
+    border: 1px solid #d6e0db;
+    border-radius: 12px;
+    background: #fff;
+    overflow: hidden
+}
+
+.week-picker button {
+    border: 0;
+    background: transparent;
+    color: var(--color-indigo);
+    height: 100%;
+    width: 42px
+}
+
+.week-picker button:hover { background: var(--color-mint-soft) }
+.week-picker span { min-width: 190px; text-align: center; font-size: 12px; font-weight: 600 }
+.agenda-heading-actions .button.primary { background: var(--color-teal); border-radius: 12px; height: 42px }
+.agenda-heading-actions .button.primary { flex: 0 0 auto; padding: 0 16px; white-space: nowrap }
+.agenda-heading-actions .button.primary:hover { background: var(--color-teal-dark) }
+
+.agenda-week {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 11px;
+    border-bottom: 1px solid var(--color-border);
+    padding-bottom: 28px
+}
+
+.agenda-week.without-sunday { grid-template-columns: repeat(6, minmax(0, 1fr)) }
+
+.agenda-day {
+    min-width: 0;
+    border: 1px solid #dfe7e2;
+    border-radius: 15px;
+    padding: 12px 10px 10px;
+    background: rgba(255,255,255,.55)
+}
+
+.agenda-day.today { border-color: #9ccdbb; background: #edf5f0 }
+.agenda-day-header { display: flex; align-items: center; justify-content: space-between; color: var(--color-ink-muted); font-size: 11px; letter-spacing: .6px }
+.agenda-day-header strong { font-weight: 500; margin-left: 4px }
+.agenda-day-header button { border: 0; background: transparent; color: #a4b0ba; padding: 2px 3px }
+.agenda-day-body { height: 350px; margin-top: 12px; border: 1px dashed #dfe5e2; border-radius: 13px; display: flex; flex-direction: column; gap: 6px; padding: 9px; overflow: auto }
+.agenda-free { margin: auto; color: #aeb8bf; font-size: 11px }
+.agenda-session { border: 1px solid #dfe5e2; border-radius: 11px; background: #fff; padding: 7px 8px; text-align: left; color: var(--color-indigo); box-shadow: 0 2px 7px #2a3c5b0b }
+.agenda-session:hover { border-color: var(--color-teal); transform: translateY(-1px) }
+.agenda-session .session-time { display: block; color: #476486; font-size: 11px; margin-bottom: 5px }
+.agenda-session .session-time i { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #b7c1ca; margin-right: 6px }
+.agenda-session strong, .agenda-session small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.agenda-session strong { font-size: 12px; font-weight: 600 }
+.agenda-session small { color: #476486; font-size: 10px; margin-top: 3px }
+.agenda-session.cancelled { opacity: .7 }
+.agenda-footer { display: flex; align-items: center; gap: 22px; padding-top: 16px; color: var(--color-ink-muted); font-size: 12px }
+.agenda-legend { display: flex; gap: 17px; flex-wrap: wrap }
+.agenda-legend span { display: inline-flex; align-items: center; gap: 6px }
+.agenda-legend i { width: 8px; height: 8px; border-radius: 50%; background: #bfc7cc }
+.agenda-legend i.present { background: #4fb286 }.agenda-legend i.confirmed { background: #2a3c5b }.agenda-legend i.missed { background: #d34b42 }.agenda-legend i.cancelled { background: #a78682 }
+.agenda-hint { margin-left: auto; white-space: nowrap }
+.agenda-hint svg { margin-right: 6px }
+
+.appointment-row {
+    min-height: 82px;
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    padding: 12px 22px;
+    gap: 14px
+}
+
+.appointment-date {
+    width: 52px;
+    min-width: 52px;
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+    color: var(--color-teal-dark)
+}
+
+    .appointment-date strong {
+        font: 700 11px "Old Standard TT",sans-serif;
+        text-transform: uppercase
+    }
+
+    .appointment-date span {
+        font-size: 10px
+    }
+
+.appointment-row.cancelled {
+    background: var(--color-porcelain)
+}
+
+@media(max-width:850px) {
+
+    .appointment-row {
+        padding: 10px 13px;
+        gap: 8px
+    }
+}
+
+@media(max-width:560px) {
+    .agenda-heading { align-items: flex-start; flex-direction: column; gap: 18px; margin-bottom: 22px }
+    .agenda-heading-actions { width: 100%; flex-wrap: wrap }
+    .week-picker { flex: 1; min-width: 220px }
+    .week-picker span { min-width: 0; flex: 1 }
+    .agenda-heading-actions .button { flex: 0 0 auto }
+    .agenda-week,
+    .agenda-week.without-sunday { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .agenda-day.sunday { grid-column: span 2 }
+    .agenda-footer { align-items: flex-start; flex-direction: column; gap: 12px }
+    .agenda-hint { margin-left: 0 }
+}
+
+.appointment-modal { width: min(620px, 100%) }
+.appointment-modal .form-stack { gap: 16px; margin-top: 21px }
+.appointment-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px }
+.appointment-form-grid label { min-width: 0 }
+.appointment-form-wide { grid-column: 1 / -1 }
+.appointment-form-grid textarea { min-height: 78px }
+.appointment-modal-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 3px }
+.appointment-modal-tools { display: flex; align-items: center; gap: 12px }
+.appointment-modal-tools .text-button { display: inline-flex; align-items: center; gap: 6px }
+.appointment-modal-actions .modal-actions { margin-top: 0 }
+.agenda-session.status-confirmed .session-time i { background: var(--color-indigo) }
+.agenda-session.status-attended .session-time i { background: var(--color-mint) }
+.agenda-session.status-missed .session-time i { background: #d34b42 }
+.agenda-session.status-cancelled .session-time i { background: var(--color-taupe) }
+
+@media(max-width:560px) {
+    .appointment-modal { padding: 26px 20px }
+    .appointment-form-grid { grid-template-columns: 1fr; gap: 13px }
+    .appointment-form-wide { grid-column: auto }
+    .appointment-modal-actions { align-items: stretch; flex-direction: column-reverse }
+    .appointment-modal-actions .modal-actions { width: 100% }
+    .appointment-modal-actions .modal-actions .button { flex: 1 }
+}

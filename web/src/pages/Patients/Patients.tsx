@@ -7,9 +7,10 @@ import {
   faHospitalUser,
   faMagnifyingGlass,
 } from '@fortawesome/free-solid-svg-icons'
-import { api } from './api'
-import NumericText from './NumericText'
-import PatientDetails from './PatientDetails'
+import { api } from '../../api'
+import NumericText from '../../NumericText'
+import PatientDetails from '../PatientDetails/PatientDetails'
+import './Patients.css'
 
 type Patient = {
   id: string

@@ -1,8 +1,9 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowLeft, faCalendarDays, faCirclePlus, faListCheck, faNotesMedical } from '@fortawesome/free-solid-svg-icons'
-import { api } from './api'
-import NumericText from './NumericText'
+import { api } from '../../api'
+import NumericText from '../../NumericText'
+import './PatientDetails.css'
 
 type Patient = {
   id: string
@@ -184,7 +185,8 @@ export default function PatientDetails({
     setEditingTask(null)
     setTaskForm(emptyTaskForm)
     setError('')
-    setShowTaskForm(true)
+    setShowTaskForm(true
+    )
   }
 
   function startEditTask(task: PatientTask) {

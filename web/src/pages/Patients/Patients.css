@@ -1,0 +1,192 @@
+.summary-row {
+    display: flex;
+    align-items: stretch;
+    gap: 18px;
+    margin: 29px 0 25px
+}
+
+.summary-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 16px;
+    min-width: 260px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    box-shadow: var(--shadow-card)
+}
+
+.summary-card div {
+    display: grid;
+    gap: 3px
+}
+
+.summary-card strong {
+    font: 700 24px "Old Standard TT",sans-serif
+}
+
+.summary-card div span {
+    font-size: 12px;
+    color: var(--color-ink-muted);
+}
+
+.summary-note {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    padding: 18px 22px;
+    border-radius: 16px;
+    background: var(--color-mint-soft);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-indigo)
+}
+
+.search-box {
+    height: 48px;
+    margin: 0 26px 16px;
+    border: 1px solid var(--color-border);
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    gap: 8px;
+    color: var(--color-ink-muted);
+    background: #f9faf8
+}
+
+    .search-box > span {
+        font-size: 15px
+    }
+
+    .search-box input {
+        border: 0;
+        outline: none;
+        flex: 1;
+        min-width: 0;
+        font-size: 14px;
+        color: var(--color-indigo);
+        background: transparent
+    }
+
+    .search-box input:focus {
+        border-color: var(--color-teal);
+        box-shadow: 0 0 0 3px #4fb28640
+    }
+
+    .search-box kbd {
+        font: 10px 'DM Sans',sans-serif;
+        border: 1px solid #e6ebe7;
+        border-radius: 4px;
+        padding: 2px 5px;
+        color: #a1aaa4
+    }
+
+.patient-row {
+    min-height: 82px;
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    padding: 12px 26px;
+    gap: 14px
+}
+
+.patient-avatar {
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    background: var(--color-taupe-soft);
+    color: var(--color-indigo);
+    font-size: 14px
+}
+
+.patient-info {
+    display: grid;
+    gap: 5px;
+    flex: 1;
+    min-width: 0
+}
+
+    .patient-info strong {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--color-indigo)
+    }
+
+    .patient-info span {
+        font-size: 12px;
+        color: var(--color-ink-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis
+    }
+
+.patient-row time {
+    font-size: 12px;
+    color: var(--color-ink-muted);
+    margin: 0 10px
+}
+
+.patient-name-link {
+    width: fit-content;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--color-indigo);
+    font-size: 14px;
+    font-weight: 600;
+    text-align: left
+}
+
+    .patient-name-link:hover {
+        color: var(--color-teal-dark);
+        text-decoration: underline
+    }
+
+.patient-row.archived {
+    background: var(--color-porcelain)
+}
+
+.list-footer {
+    padding: 12px 22px;
+    border-top: 1px solid var(--color-border);
+    font-size: 12px;
+    color: var(--color-ink-muted)
+}
+
+.search-box:focus-within {
+    border-color: var(--color-teal);
+    box-shadow: 0 0 0 3px #4fb28640
+}
+
+@media(max-width:560px) {
+
+    .summary-row {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 10px
+    }
+
+    .summary-card {
+        min-width: 0
+    }
+
+    .summary-note {
+        line-height: 1.5
+    }
+
+    .search-box {
+        margin-left: 14px;
+        margin-right: 14px
+    }
+
+    .patient-row {
+        padding: 10px 13px;
+        gap: 8px
+    }
+
+        .patient-row time {
+            display: none
+        }
+}

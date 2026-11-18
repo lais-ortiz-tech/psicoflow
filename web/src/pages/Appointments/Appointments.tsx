@@ -1,8 +1,9 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCalendarDays, faChevronLeft, faChevronRight, faCircleInfo, faPlus, faReceipt, faTrashCan } from '@fortawesome/free-solid-svg-icons'
-import { api } from './api'
-import NumericText from './NumericText'
+import { api } from '../../api'
+import NumericText from '../../NumericText'
+import './Appointments.css'
 
 type Patient = {
   id: string
@@ -14,7 +15,7 @@ function startOfWeek(value: Date) {
   const date = new Date(value)
   const day = date.getDay()
   date.setHours(0, 0, 0, 0)
-  date.setDate(date.getDate() - day)
+  date.setDate(date.getDate() - ((day + 6) % 7))
   return date
 }
 
@@ -139,6 +140,7 @@ export default function Appointments({
   const createRequestHandled = useRef(false)
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [includeCancelled, setIncludeCancelled] = useState(false)
+  const [showSunday, setShowSunday] = useState(() => window.localStorage.getItem('psicoflow:appointments:showSunday') !== 'false')
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null)
   const [appointmentForm, setAppointmentForm] = useState<AppointmentForm>(newAppointmentForm)
   const [showAppointmentForm, setShowAppointmentForm] = useState(false)
@@ -275,13 +277,13 @@ export default function Appointments({
   const projectedIncome = activeWeekAppointments
     .filter((appointment) => appointment.status === 'scheduled' || appointment.status === 'confirmed')
     .reduce((sum, appointment) => sum + appointment.amount, 0)
-  const dayLabels = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB']
+  const dayLabels = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB', 'DOM']
 
   return (
     <>
       <div className="page-heading">
         <div>
-          <p className="eyebrow">CONSULTÓRIO</p>
+          <p className="eyebrow">SEU CONSULTÓRIO</p>
           <h1>Agenda</h1>
           <p className="agenda-summary">
             <NumericText value={activeWeekAppointments.length} /> sessões nesta semana · <NumericText value={formatCurrency(projectedIncome)} /> previstos
@@ -314,14 +316,16 @@ export default function Appointments({
           <button onClick={() => setError('')} aria-label="Fechar erro">×</button>
         </div>
       )}
-      <section className="agenda-week" aria-label="Agenda semanal">
-        {weekDays.map((day, index) => {
+      <section className={`agenda-week ${showSunday ? '' : 'without-sunday'}`} aria-label="Agenda semanal">
+        {weekDays.filter((day) => showSunday || day.getDay() !== 0).map((day) => {
           const dayAppointments = weekAppointments.filter((appointment) => sameDay(new Date(appointment.startsAt), day))
           const isToday = sameDay(day, new Date())
+          const isSunday = day.getDay() === 0
+          const dayLabelIndex = isSunday ? 6 : day.getDay() - 1
           return (
-            <div className={`agenda-day ${isToday ? 'today' : ''}`} key={day.toISOString()}>
+            <div className={`agenda-day ${isToday ? 'today' : ''} ${isSunday ? 'sunday' : ''}`} key={day.toISOString()}>
               <div className="agenda-day-header">
-                <span>{dayLabels[index]} <strong><NumericText value={day.getDate()} /></strong></span>
+                <span>{dayLabels[dayLabelIndex]} <strong><NumericText value={day.getDate()} /></strong></span>
                 <button type="button" onClick={startCreateAppointment} aria-label={`Nova sessão em ${day.getDate()}`}><FontAwesomeIcon icon={faPlus} /></button>
               </div>
               <div className="agenda-day-body">
@@ -345,6 +349,11 @@ export default function Appointments({
           <span><i className="present" /> Compareceu</span><span><i className="confirmed" /> Confirmada</span><span><i className="scheduled" /> Agendada</span><span><i className="missed" /> Faltou</span><span><i className="cancelled" /> Cancelada</span>
         </div>
         <label className="archive-toggle"><input type="checkbox" checked={includeCancelled} onChange={(event) => setIncludeCancelled(event.target.checked)} /> Mostrar cancelados</label>
+        <label className="archive-toggle"><input type="checkbox" checked={showSunday} onChange={(event) => {
+          const visible = event.target.checked
+          window.localStorage.setItem('psicoflow:appointments:showSunday', String(visible))
+          setShowSunday(visible)
+        }} /> Mostrar domingo</label>
         <span className="agenda-hint"><FontAwesomeIcon icon={faCalendarDays} /> Clique em uma sessão para editar</span>
       </div>
       <p className="privacy-note">

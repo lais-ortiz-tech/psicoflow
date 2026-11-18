@@ -1,0 +1,281 @@
+.login-page {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: radial-gradient(ellipse at 70% 15%,#dcefe5 0,transparent 42%),var(--color-porcelain)
+}
+
+.login-card {
+    width: min(440px,100%);
+    background: #fff;
+    border: 1px solid var(--color-border);
+    border-radius: 20px;
+    padding: 42px;
+    box-shadow: 0 18px 60px #2a3c5b12
+}
+
+.brand-mark {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    display: grid;
+    place-items: center;
+}
+
+.brand-mark.small {
+    width: 42px;
+    height: 42px;
+    flex: 0 0 40px;
+    padding: 5px;
+}
+
+.brand-mark.small img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.login-card h1 {
+    font: 500 32px/1.2 "Old Standard TT",sans-serif;
+    margin: 0;
+    color: var(--color-indigo);
+}
+
+.login-footnote {
+    font-size: 11px;
+    color: var(--color-ink-muted);
+    text-align: center;
+    margin: 24px 0 0
+}
+
+.app-shell {
+    min-height: 100vh
+}
+
+.sidebar {
+    width: 236px;
+    position: fixed;
+    inset: 0 auto 0 0;
+    background: linear-gradient(180deg,var(--color-indigo) 0%,var(--color-mint) 100%);
+    padding: 24px 17px;
+    display: flex;
+    flex-direction: column;
+    z-index: 2;
+    overflow-y: auto
+}
+
+.brand {
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #fff;
+    font: 800 17px "Old Standard TT",sans-serif;
+    letter-spacing: -.6px;
+    padding: 0 8px
+}
+
+.nav-caption {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.4px;
+    color: #fff;
+    margin: 45px 10px 12px
+}
+
+.nav-link {
+    height: 40px;
+    border-radius: 8px;
+    padding: 0 11px;
+    text-decoration: none;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    font-size: 13px;
+    width: 100%;
+    border: 0;
+    background: #2a3c5bcc;
+    text-align: left;
+    margin-bottom: 5px
+}
+
+    .nav-link span {
+        font-size: 16px
+    }
+
+    .nav-link.selected {
+        background: var(--color-indigo);
+        color: #fff;
+        font-weight: 700;
+        box-shadow: inset 4px 0 var(--color-mint)
+    }
+
+.sidebar-bottom {
+    margin-top: auto;
+    border: 1px solid #ffffff80;
+    border-radius: 12px;
+    background: #ffffffeb;
+    padding: 12px 9px;
+    display: flex;
+    align-items: center;
+    gap: 10px
+}
+
+.user-label {
+    display: grid;
+    gap: 3px;
+    flex: 1;
+    min-width: 0
+}
+
+    .user-label strong {
+        font-size: 11px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis
+    }
+
+    .user-label span {
+        font-size: 10px;
+        color: var(--color-ink-muted)
+    }
+
+.icon-button {
+    border: 0;
+    background: transparent;
+    color: var(--color-indigo);
+    font-size: 18px
+}
+
+.main-content {
+    margin-left: 236px;
+    min-height: 100vh
+}
+
+.topbar {
+    height: 76px;
+    background: #fff;
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 42px;
+    color: var(--color-ink-muted);
+    font-size: 13px
+}
+
+.crumb {
+    color: var(--color-taupe);
+    padding: 0 9px
+}
+
+.secure-label {
+    font-size: 12px;
+    color: var(--color-ink-muted);
+    display: flex;
+    align-items: center;
+    gap: 7px
+}
+
+.secure-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color-teal)
+}
+
+.page-content {
+    max-width: 1180px;
+    padding: 43px 48px 40px;
+    margin: auto
+}
+
+.sidebar button:focus-visible, .sidebar a:focus-visible {
+    outline-color: #fff
+}
+
+.sidebar-bottom button:focus-visible {
+    outline-color: var(--color-indigo)
+}
+
+.nav-link:hover {
+    background: var(--color-indigo)
+}
+
+@media(max-width:850px) {
+    .sidebar {
+        width: 68px;
+        padding: 20px 10px
+    }
+
+    .brand {
+        justify-content: center;
+        padding: 0
+    }
+
+        .brand > span:last-child, .nav-caption {
+            display: none
+        }
+
+    .nav-link {
+        font-size: 0;
+        justify-content: center
+    }
+
+        .nav-link:first-of-type {
+            margin-top: 40px
+        }
+
+        .nav-link span {
+            font-size: 18px
+        }
+
+    .sidebar-bottom {
+        justify-content: center;
+        flex-wrap: wrap;
+        padding: 9px 3px
+    }
+
+        .sidebar-bottom .user-label {
+            display: none
+        }
+
+    .main-content {
+        margin-left: 68px
+    }
+
+    .page-content {
+        padding: 35px 25px
+    }
+
+    .topbar {
+        padding: 0 25px
+    }
+}
+
+@media(max-width:560px) {
+
+    .page-content {
+        padding: 28px 15px
+    }
+
+    .topbar {
+        padding: 0 15px
+    }
+
+    .login-card {
+        padding: 30px 24px
+    }
+
+    .secure-label {
+        font-size: 0
+    }
+
+    .secure-dot {
+        width: 7px;
+        height: 7px
+    }
+}

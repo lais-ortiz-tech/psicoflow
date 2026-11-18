@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/appointments.tsx","./src/finance.tsx","./src/home.tsx","./src/numerictext.tsx","./src/patientdetails.tsx","./src/patients.tsx","./src/api.ts","./src/main.tsx"],"version":"5.7.3"}
+{"root":["./src/app.tsx","./src/numerictext.tsx","./src/api.ts","./src/main.tsx","./src/pages/appointments/appointments.tsx","./src/pages/finance/finance.tsx","./src/pages/home/home.tsx","./src/pages/patientdetails/patientdetails.tsx","./src/pages/patients/patients.tsx"],"version":"5.7.3"}

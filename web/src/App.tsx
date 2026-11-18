@@ -7,11 +7,12 @@ import {
   faRightFromBracket,
   faWallet,
 } from '@fortawesome/free-solid-svg-icons'
-import Appointments from './Appointments'
-import Finance from './Finance'
-import Home from './Home'
-import Patients from './Patients'
+import Appointments from './pages/Appointments/Appointments'
+import Finance from './pages/Finance/Finance'
+import Home from './pages/Home/Home'
+import Patients from './pages/Patients/Patients'
 import { api } from './api'
+import './App.css'
 
 const logoUrl = new URL('../img/logotipo.png', import.meta.url).href
 

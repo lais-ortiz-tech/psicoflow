@@ -1,8 +1,9 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowDown, faArrowUp, faChevronLeft, faChevronRight, faPen, faPlus, faTrashCan, faWallet } from '@fortawesome/free-solid-svg-icons'
-import { api } from './api'
-import NumericText from './NumericText'
+import { api } from '../../api'
+import NumericText from '../../NumericText'
+import './Finance.css'
 
 type EntryType = 'revenue' | 'expense'
 type EntryStatus = 'paid' | 'pending'
