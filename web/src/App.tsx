@@ -5,8 +5,10 @@ import {
   faHouse,
   faNotesMedical,
   faRightFromBracket,
+  faWallet,
 } from '@fortawesome/free-solid-svg-icons'
 import Appointments from './Appointments'
+import Finance from './Finance'
 import Home from './Home'
 import Patients from './Patients'
 import { api } from './api'
@@ -14,7 +16,7 @@ import { api } from './api'
 const logoUrl = new URL('../img/logotipo.png', import.meta.url).href
 
 type User = { name: string; email: string }
-type Section = 'home' | 'patients' | 'appointments'
+type Section = 'home' | 'patients' | 'appointments' | 'finance'
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
@@ -120,6 +122,13 @@ export default function App() {
         >
           <span><FontAwesomeIcon icon={faCalendarDays} /></span> Agenda
         </button>
+        <button
+          className={`nav-link ${section === 'finance' ? 'selected' : ''}`}
+          onClick={() => setSection('finance')}
+          aria-current={section === 'finance' ? 'page' : undefined}
+        >
+          <span><FontAwesomeIcon icon={faWallet} /></span> Financeiro
+        </button>
         <div className="sidebar-bottom">
           <div className="avatar">{user.name.slice(0, 1).toUpperCase()}</div>
           <div className="user-label">
@@ -135,7 +144,7 @@ export default function App() {
       <main className="main-content" id={section}>
         <header className="topbar">
           <span>
-            Workspace <span className="crumb">/</span> {section === 'home' ? 'Início' : section === 'patients' ? 'Pacientes' : 'Agenda'}
+            Workspace <span className="crumb">/</span> {section === 'home' ? 'Início' : section === 'patients' ? 'Pacientes' : section === 'appointments' ? 'Agenda' : 'Financeiro'}
           </span>
           <span className="secure-label"><span className="secure-dot" /> Acesso privado</span>
         </header>
@@ -150,7 +159,7 @@ export default function App() {
                 setSection('appointments')
               }}
             />
-          ) : section === 'patients' ? <Patients /> : (
+          ) : section === 'patients' ? <Patients /> : section === 'finance' ? <Finance /> : (
             <Appointments
               openCreateOnMount={createAppointmentOnOpen}
               onCreateRequestHandled={() => setCreateAppointmentOnOpen(false)}

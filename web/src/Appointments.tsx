@@ -1,7 +1,8 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faCalendarDays, faChevronLeft, faChevronRight, faCircleInfo, faPlus } from '@fortawesome/free-solid-svg-icons'
+import { faCalendarDays, faChevronLeft, faChevronRight, faCircleInfo, faPlus, faReceipt, faTrashCan } from '@fortawesome/free-solid-svg-icons'
 import { api } from './api'
+import NumericText from './NumericText'
 
 type Patient = {
   id: string
@@ -37,11 +38,24 @@ type Appointment = {
   startsAt: string
   endsAt: string
   isCancelled: boolean
+  amount: number
+  modality: 'in_person' | 'online'
+  status: 'scheduled' | 'confirmed' | 'attended' | 'missed' | 'cancelled'
+  notes: string
   createdAt: string
   updatedAt: string
 }
 
-type AppointmentForm = { patientId: string; startsAt: string; endsAt: string }
+type AppointmentForm = {
+  patientId: string
+  date: string
+  time: string
+  duration: string
+  amount: string
+  modality: 'in_person' | 'online'
+  status: Appointment['status']
+  notes: string
+}
 
 function toLocalDateTimeValue(value: Date) {
   const pad = (part: number) => String(part).padStart(2, '0')
@@ -51,12 +65,67 @@ function toLocalDateTimeValue(value: Date) {
 function newAppointmentForm(): AppointmentForm {
   const startsAt = new Date()
   startsAt.setHours(startsAt.getHours() + 1, 0, 0, 0)
-  const endsAt = new Date(startsAt.getTime() + 50 * 60 * 1000)
+  const startsAtValue = toLocalDateTimeValue(startsAt)
   return {
     patientId: '',
-    startsAt: toLocalDateTimeValue(startsAt),
-    endsAt: toLocalDateTimeValue(endsAt),
+    date: startsAtValue.slice(0, 10),
+    time: startsAtValue.slice(11, 16),
+    duration: '50',
+    amount: '0',
+    modality: 'in_person',
+    status: 'scheduled',
+    notes: '',
   }
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
+}
+
+function isAppointmentStatus(value: string): value is Appointment['status'] {
+  return value === 'scheduled' || value === 'confirmed' || value === 'attended'
+    || value === 'missed' || value === 'cancelled'
+}
+
+function printAppointmentReceipt(appointment: Appointment) {
+  const receiptWindow = window.open('', '_blank')
+  if (!receiptWindow) return false
+
+  const document = receiptWindow.document
+  const style = document.createElement('style')
+  style.textContent = 'body{font-family:Arial,sans-serif;color:#2a3c5b;padding:32px;max-width:640px;margin:auto}h1{font-size:24px}p{margin:8px 0}.line{border-top:1px solid #dfe7e2;margin:20px 0}.total{font-size:20px;font-weight:bold}'
+  const content = document.createElement('main')
+  const title = document.createElement('h1')
+  title.textContent = 'Recibo de atendimento'
+  content.append(title)
+
+  const start = new Date(appointment.startsAt)
+  const end = new Date(appointment.endsAt)
+  const details = [
+    `Paciente: ${appointment.patientName}`,
+    `Data: ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'long' }).format(start)}`,
+    `Horário: ${new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(start)} às ${new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(end)}`,
+    `Modalidade: ${appointment.modality === 'online' ? 'Online' : 'Presencial'}`,
+  ]
+  details.forEach((detail) => {
+    const paragraph = document.createElement('p')
+    paragraph.textContent = detail
+    content.append(paragraph)
+  })
+
+  const divider = document.createElement('div')
+  divider.className = 'line'
+  content.append(divider)
+  const total = document.createElement('p')
+  total.className = 'total'
+  total.textContent = `Valor: ${formatCurrency(appointment.amount)}`
+  content.append(total)
+  document.body.replaceChildren(style, content)
+  document.title = 'Recibo de atendimento'
+  document.close()
+  receiptWindow.focus()
+  window.setTimeout(() => receiptWindow.print(), 250)
+  return true
 }
 
 export default function Appointments({
@@ -76,6 +145,7 @@ export default function Appointments({
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()))
+  const [savingAppointment, setSavingAppointment] = useState(false)
 
   const loadAppointments = useCallback(async () => {
     const query = new URLSearchParams({ includeCancelled: String(includeCancelled) })
@@ -113,10 +183,17 @@ export default function Appointments({
 
   function startEditAppointment(appointment: Appointment) {
     setEditingAppointment(appointment)
+    const startsAt = new Date(appointment.startsAt)
+    const startsAtValue = toLocalDateTimeValue(startsAt)
     setAppointmentForm({
       patientId: appointment.patientId,
-      startsAt: toLocalDateTimeValue(new Date(appointment.startsAt)),
-      endsAt: toLocalDateTimeValue(new Date(appointment.endsAt)),
+      date: startsAtValue.slice(0, 10),
+      time: startsAtValue.slice(11, 16),
+      duration: String(Math.round((new Date(appointment.endsAt).getTime() - startsAt.getTime()) / 60000)),
+      amount: String(appointment.amount),
+      modality: appointment.modality,
+      status: appointment.status,
+      notes: appointment.notes,
     })
     setError('')
     setShowAppointmentForm(true)
@@ -125,16 +202,23 @@ export default function Appointments({
   async function saveAppointment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError('')
-    const startsAt = new Date(appointmentForm.startsAt)
-    const endsAt = new Date(appointmentForm.endsAt)
+    const startsAt = new Date(`${appointmentForm.date}T${appointmentForm.time}`)
+    const duration = Number(appointmentForm.duration)
+    const amount = Number(appointmentForm.amount)
+    const endsAt = new Date(startsAt.getTime() + duration * 60 * 1000)
 
-    if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime()) || endsAt <= startsAt) {
-      setError('O término deve ser posterior ao início do compromisso.')
+    if (Number.isNaN(startsAt.getTime()) || !Number.isInteger(duration) || duration < 1 || duration > 1440) {
+      setError('Informe uma data, horário e duração válidos (de 1 a 1440 minutos).')
+      return
+    }
+    if (!Number.isFinite(amount) || amount < 0 || Math.round(amount * 100) !== amount * 100) {
+      setError('Informe um valor válido, com até duas casas decimais.')
       return
     }
 
+    setSavingAppointment(true)
     try {
-      const saved = await api<Appointment>(
+      await api<Appointment>(
         editingAppointment ? `/api/appointments/${editingAppointment.id}` : '/api/appointments',
         {
           method: editingAppointment ? 'PUT' : 'POST',
@@ -142,31 +226,39 @@ export default function Appointments({
             patientId: appointmentForm.patientId,
             startsAt: startsAt.toISOString(),
             endsAt: endsAt.toISOString(),
+            amount,
+            modality: appointmentForm.modality,
+            status: appointmentForm.status,
+            notes: appointmentForm.notes.trim(),
           }),
         },
       )
       setShowAppointmentForm(false)
       setNotice(editingAppointment ? 'Compromisso atualizado.' : 'Compromisso agendado.')
-      setAppointments((current) => [
-        ...current.filter((appointment) => appointment.id !== saved.id),
-        saved,
-      ].sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime()))
+      await loadAppointments()
+    } catch (reason) {
+      setError((reason as Error).message)
+    } finally {
+      setSavingAppointment(false)
+    }
+  }
+
+  async function deleteAppointment(appointment: Appointment) {
+    if (!window.confirm(`Excluir o compromisso de ${appointment.patientName}? Esta ação não pode ser desfeita.`)) return
+    setError('')
+    try {
+      await api<void>(`/api/appointments/${appointment.id}`, { method: 'DELETE' })
+      setShowAppointmentForm(false)
+      setNotice('Compromisso excluído.')
+      await loadAppointments()
     } catch (reason) {
       setError((reason as Error).message)
     }
   }
 
-  async function cancelAppointment(appointment: Appointment) {
-    if (!window.confirm(`Cancelar o compromisso de ${appointment.patientName}?`)) return
-    setError('')
-
-    try {
-      await api<Appointment>(`/api/appointments/${appointment.id}/cancel`, { method: 'POST' })
-      setNotice('Compromisso cancelado.')
-      await loadAppointments()
-    } catch (reason) {
-      setError((reason as Error).message)
-    }
+  function createReceipt(appointment: Appointment) {
+    if (!printAppointmentReceipt(appointment))
+      setError('Permita a abertura de janelas pop-up para gerar o recibo.')
   }
 
   const weekDays = Array.from({ length: 7 }, (_, index) => {
@@ -180,6 +272,9 @@ export default function Appointments({
     return date >= weekStart && date < new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000)
   })
   const activeWeekAppointments = weekAppointments.filter((appointment) => !appointment.isCancelled)
+  const projectedIncome = activeWeekAppointments
+    .filter((appointment) => appointment.status === 'scheduled' || appointment.status === 'confirmed')
+    .reduce((sum, appointment) => sum + appointment.amount, 0)
   const dayLabels = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB']
 
   return (
@@ -188,14 +283,16 @@ export default function Appointments({
         <div>
           <p className="eyebrow">CONSULTÓRIO</p>
           <h1>Agenda</h1>
-          <p className="agenda-summary">{activeWeekAppointments.length} sessões nesta semana · R$ 0 previstos</p>
+          <p className="agenda-summary">
+            <NumericText value={activeWeekAppointments.length} /> sessões nesta semana · <NumericText value={formatCurrency(projectedIncome)} /> previstos
+          </p>
         </div>
         <div className="agenda-heading-actions">
           <div className="week-picker">
             <button type="button" onClick={() => setWeekStart((current) => new Date(current.getTime() - 7 * 24 * 60 * 60 * 1000))} aria-label="Semana anterior">
               <FontAwesomeIcon icon={faChevronLeft} />
             </button>
-            <span>{formatWeekRange(weekStart)}</span>
+          <span><NumericText value={formatWeekRange(weekStart)} /></span>
             <button type="button" onClick={() => setWeekStart((current) => new Date(current.getTime() + 7 * 24 * 60 * 60 * 1000))} aria-label="Próxima semana">
               <FontAwesomeIcon icon={faChevronRight} />
             </button>
@@ -224,15 +321,18 @@ export default function Appointments({
           return (
             <div className={`agenda-day ${isToday ? 'today' : ''}`} key={day.toISOString()}>
               <div className="agenda-day-header">
-                <span>{dayLabels[index]} <strong>{day.getDate()}</strong></span>
+                <span>{dayLabels[index]} <strong><NumericText value={day.getDate()} /></strong></span>
                 <button type="button" onClick={startCreateAppointment} aria-label={`Nova sessão em ${day.getDate()}`}><FontAwesomeIcon icon={faPlus} /></button>
               </div>
               <div className="agenda-day-body">
                 {dayAppointments.length === 0 ? <span className="agenda-free">Livre</span> : dayAppointments.map((appointment) => (
-                  <button className={`agenda-session ${appointment.isCancelled ? 'cancelled' : ''}`} key={appointment.id} onClick={() => startEditAppointment(appointment)}>
-                    <span className="session-time"><i />{new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(new Date(appointment.startsAt))}</span>
+                  <button className={`agenda-session ${appointment.isCancelled ? 'cancelled' : ''} status-${appointment.status}`} key={appointment.id} onClick={() => startEditAppointment(appointment)}>
+                    <span className="session-time"><i /><NumericText value={new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(new Date(appointment.startsAt))} /></span>
                     <strong>{appointment.patientName}</strong>
-                    <small>{appointment.isCancelled ? 'Cancelada' : 'Presencial'} · {Math.round((new Date(appointment.endsAt).getTime() - new Date(appointment.startsAt).getTime()) / 60000)}min</small>
+                    <small>
+                      {appointment.isCancelled ? 'Cancelada' : appointment.modality === 'online' ? 'Online' : 'Presencial'}
+                      {' · '}<NumericText value={Math.round((new Date(appointment.endsAt).getTime() - new Date(appointment.startsAt).getTime()) / 60000)} />min
+                    </small>
                   </button>
                 ))}
               </div>
@@ -257,11 +357,11 @@ export default function Appointments({
           className="modal-backdrop"
           role="presentation"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setShowAppointmentForm(false)
+            if (event.target === event.currentTarget && !savingAppointment) setShowAppointmentForm(false)
           }}
         >
           <section
-            className="modal"
+            className="modal appointment-modal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="appointment-form-title"
@@ -270,6 +370,7 @@ export default function Appointments({
               className="modal-close"
               onClick={() => setShowAppointmentForm(false)}
               aria-label="Fechar"
+              disabled={savingAppointment}
             >
               ×
             </button>
@@ -277,70 +378,82 @@ export default function Appointments({
             <h2 id="appointment-form-title">
               {editingAppointment ? 'Editar compromisso' : 'Novo compromisso'}
             </h2>
-            <p className="muted">Escolha o paciente e o intervalo do atendimento.</p>
+            <p className="muted">Registre o atendimento e controle a presença do paciente.</p>
             <form className="form-stack" onSubmit={saveAppointment}>
-              <label>
-                Paciente <span className="required">*</span>
-                <select
-                  value={appointmentForm.patientId}
-                  onChange={(event) => setAppointmentForm({
-                    ...appointmentForm,
-                    patientId: event.target.value,
-                  })}
-                  required
-                >
-                  {(appointmentPatients ?? [])
-                    .filter((patient) => !patient.isArchived)
-                    .map((patient) => (
-                      <option key={patient.id} value={patient.id}>{patient.name}</option>
-                    ))}
-                </select>
-              </label>
-              <label>
-                Início <span className="required">*</span>
-                <input
-                  type="datetime-local"
-                  value={appointmentForm.startsAt}
-                  onChange={(event) => setAppointmentForm({
-                    ...appointmentForm,
-                    startsAt: event.target.value,
-                  })}
-                  required
-                />
-              </label>
-              <label>
-                Término <span className="required">*</span>
-                <input
-                  type="datetime-local"
-                  value={appointmentForm.endsAt}
-                  onChange={(event) => setAppointmentForm({
-                    ...appointmentForm,
-                    endsAt: event.target.value,
-                  })}
-                  required
-                />
-              </label>
+              <div className="appointment-form-grid">
+                <label className="appointment-form-wide">
+                  Paciente <span className="required">*</span>
+                  <select
+                    value={appointmentForm.patientId}
+                    onChange={(event) => setAppointmentForm({ ...appointmentForm, patientId: event.target.value })}
+                    required
+                  >
+                    {(appointmentPatients ?? [])
+                      .filter((patient) => !patient.isArchived)
+                      .map((patient) => <option key={patient.id} value={patient.id}>{patient.name}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Data <span className="required">*</span>
+                  <input type="date" value={appointmentForm.date} onChange={(event) => setAppointmentForm({ ...appointmentForm, date: event.target.value })} required />
+                </label>
+                <label>
+                  Horário <span className="required">*</span>
+                  <input type="time" value={appointmentForm.time} onChange={(event) => setAppointmentForm({ ...appointmentForm, time: event.target.value })} required />
+                </label>
+                <label>
+                  Duração (min) <span className="required">*</span>
+                  <input type="number" min="1" max="1440" step="1" value={appointmentForm.duration} onChange={(event) => setAppointmentForm({ ...appointmentForm, duration: event.target.value })} required />
+                </label>
+                <label>
+                  Valor (R$) <span className="required">*</span>
+                  <input type="number" min="0" max="999999999.99" step="0.01" value={appointmentForm.amount} onChange={(event) => setAppointmentForm({ ...appointmentForm, amount: event.target.value })} required />
+                </label>
+                <label>
+                  Modalidade <span className="required">*</span>
+                  <select value={appointmentForm.modality} onChange={(event) => setAppointmentForm({ ...appointmentForm, modality: event.target.value === 'online' ? 'online' : 'in_person' })}>
+                    <option value="in_person">Presencial</option>
+                    <option value="online">Online</option>
+                  </select>
+                </label>
+                <label>
+                  Presença / status <span className="required">*</span>
+                  <select value={appointmentForm.status} onChange={(event) => {
+                    if (isAppointmentStatus(event.target.value))
+                      setAppointmentForm({ ...appointmentForm, status: event.target.value })
+                  }}>
+                    <option value="scheduled">Agendada</option>
+                    <option value="confirmed">Confirmada</option>
+                    <option value="attended">Compareceu</option>
+                    <option value="missed">Faltou</option>
+                    {editingAppointment && <option value="cancelled">Cancelada</option>}
+                  </select>
+                </label>
+                <label className="appointment-form-wide">
+                  Observações <span className="optional">(opcional)</span>
+                  <textarea maxLength={2000} placeholder="Anotações do agendamento (opcional)" value={appointmentForm.notes} onChange={(event) => setAppointmentForm({ ...appointmentForm, notes: event.target.value })} />
+                </label>
+              </div>
               {error && <p className="error" role="alert">{error}</p>}
-              <div className="modal-actions">
-                  {editingAppointment && !editingAppointment.isCancelled && (
-                    <button
-                      type="button"
-                      className="text-button archive-action"
-                      onClick={() => cancelAppointment(editingAppointment)}
-                    >
-                      Cancelar sessão
-                    </button>
+              <div className="appointment-modal-actions">
+                <div className="appointment-modal-tools">
+                  {editingAppointment && (
+                    <>
+                      <button type="button" className="text-button archive-action" onClick={() => deleteAppointment(editingAppointment)} disabled={savingAppointment}>
+                        <FontAwesomeIcon icon={faTrashCan} /> Excluir
+                      </button>
+                      <button type="button" className="text-button appointment-receipt-button" onClick={() => createReceipt(editingAppointment)}>
+                        <FontAwesomeIcon icon={faReceipt} /> Recibo
+                      </button>
+                    </>
                   )}
-                <button
-                  type="button"
-                  className="button secondary"
-                  onClick={() => setShowAppointmentForm(false)}
-                >
-                  Fechar
-                </button>
-                <button className="button primary" type="submit">
-                  {editingAppointment ? 'Salvar alterações' : 'Agendar'}
-                </button>
+                </div>
+                <div className="modal-actions">
+                  <button type="button" className="button secondary" onClick={() => setShowAppointmentForm(false)} disabled={savingAppointment}>Fechar</button>
+                  <button className="button primary" type="submit" disabled={savingAppointment}>
+                    {savingAppointment ? 'Salvando…' : editingAppointment ? 'Salvar alterações' : 'Agendar'}
+                  </button>
+                </div>
               </div>
             </form>
           </section>

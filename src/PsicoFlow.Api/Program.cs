@@ -34,9 +34,11 @@ var legacyJsonFilePath = Path.GetFullPath(
     builder.Configuration["Storage:LegacyFilePath"] ?? builder.Configuration["Storage:FilePath"] ?? "data/patients.json",
     contentRoot);
 builder.Services.AddSingleton(new PatientStore(databasePath, legacyJsonFilePath));
+builder.Services.AddSingleton(new FinancialStore(databasePath));
 
 var app = builder.Build();
 await app.Services.GetRequiredService<PatientStore>().InitializeAsync();
+await app.Services.GetRequiredService<FinancialStore>().InitializeAsync();
 
 app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
 {
@@ -249,7 +251,8 @@ appointments.MapPost("", async (AppointmentInput input, HttpContext context, Pat
     var appointment = new AppointmentRecord(
         Guid.NewGuid(), GetWorkspaceId(context.User), input.PatientId,
         "", input.StartsAt.ToUniversalTime(), input.EndsAt.ToUniversalTime(),
-        false, now, now);
+        false, decimal.ToInt64(input.Amount * 100), input.Modality.Trim().ToLowerInvariant(),
+        input.Status.Trim().ToLowerInvariant(), input.Notes?.Trim() ?? "", now, now);
     var result = await store.AddAppointmentAsync(appointment);
     return result.Status switch
     {
@@ -262,12 +265,14 @@ appointments.MapPost("", async (AppointmentInput input, HttpContext context, Pat
 
 appointments.MapPut("/{id:guid}", async (Guid id, AppointmentInput input, HttpContext context, PatientStore store) =>
 {
-    var errors = ValidateAppointment(input);
+    var errors = ValidateAppointment(input, allowCancelled: true);
     if (errors.Count > 0)
         return Results.ValidationProblem(errors);
 
     var result = await store.UpdateAppointmentAsync(
-        GetWorkspaceId(context.User), id, input.PatientId, input.StartsAt.ToUniversalTime(), input.EndsAt.ToUniversalTime());
+        GetWorkspaceId(context.User), id, input.PatientId, input.StartsAt.ToUniversalTime(), input.EndsAt.ToUniversalTime(),
+        decimal.ToInt64(input.Amount * 100), input.Modality.Trim().ToLowerInvariant(),
+        input.Status.Trim().ToLowerInvariant(), input.Notes?.Trim() ?? "");
     return result.Status switch
     {
         AppointmentSaveStatus.Success => Results.Ok(ToAppointmentResponse(result.Appointment!)),
@@ -283,6 +288,66 @@ appointments.MapPost("/{id:guid}/cancel", async (Guid id, HttpContext context, P
     var cancelled = await store.CancelAppointmentAsync(GetWorkspaceId(context.User), id);
     return cancelled is null ? Results.NotFound() : Results.Ok(ToAppointmentResponse(cancelled));
 });
+
+appointments.MapDelete("/{id:guid}", async (Guid id, HttpContext context, PatientStore store) =>
+    await store.DeleteAppointmentAsync(GetWorkspaceId(context.User), id) ? Results.NoContent() : Results.NotFound());
+
+var financialEntries = app.MapGroup("/api/financial-entries").RequireAuthorization();
+
+financialEntries.MapGet("", async (HttpContext context, FinancialStore store, int? year, int? month) =>
+{
+    var selectedYear = year ?? DateTime.Today.Year;
+    var selectedMonth = month ?? DateTime.Today.Month;
+    if (selectedYear is < 1 or > 9998 || selectedMonth is < 1 or > 12)
+        return Results.ValidationProblem(new Dictionary<string, string[]> { ["month"] = ["Informe um mês válido."] });
+
+    var from = new DateOnly(selectedYear, selectedMonth, 1);
+    var entries = await store.ListAsync(GetWorkspaceId(context.User), from, from.AddMonths(1));
+    return Results.Ok(entries.Select(ToFinancialEntryResponse));
+});
+
+financialEntries.MapPost("", async (FinancialEntryInput input, HttpContext context, FinancialStore store) =>
+{
+    var validation = ValidateFinancialEntry(input);
+    if (validation.Errors.Count > 0)
+        return Results.ValidationProblem(validation.Errors);
+
+    var now = DateTimeOffset.UtcNow;
+    var entry = new FinancialEntryRecord(
+        Guid.NewGuid(), GetWorkspaceId(context.User), input.PatientId, null,
+        input.Description.Trim(), input.Type.Trim().ToLowerInvariant(), input.Status.Trim().ToLowerInvariant(),
+        validation.AmountCents, input.EntryDate, now, now);
+    var result = await store.SaveAsync(entry, false);
+    return result.Status switch
+    {
+        FinancialEntrySaveStatus.Success => Results.Created($"/api/financial-entries/{entry.Id}", ToFinancialEntryResponse(result.Entry!)),
+        FinancialEntrySaveStatus.PatientUnavailable => Results.ValidationProblem(new Dictionary<string, string[]> { [nameof(input.PatientId)] = ["Selecione um paciente ativo do workspace."] }),
+        _ => throw new InvalidOperationException("Resultado inesperado ao criar lançamento financeiro.")
+    };
+});
+
+financialEntries.MapPut("/{id:guid}", async (Guid id, FinancialEntryInput input, HttpContext context, FinancialStore store) =>
+{
+    var validation = ValidateFinancialEntry(input);
+    if (validation.Errors.Count > 0)
+        return Results.ValidationProblem(validation.Errors);
+
+    var entry = new FinancialEntryRecord(
+        id, GetWorkspaceId(context.User), input.PatientId, null,
+        input.Description.Trim(), input.Type.Trim().ToLowerInvariant(), input.Status.Trim().ToLowerInvariant(),
+        validation.AmountCents, input.EntryDate, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+    var result = await store.SaveAsync(entry, true);
+    return result.Status switch
+    {
+        FinancialEntrySaveStatus.Success => Results.Ok(ToFinancialEntryResponse(result.Entry!)),
+        FinancialEntrySaveStatus.PatientUnavailable => Results.ValidationProblem(new Dictionary<string, string[]> { [nameof(input.PatientId)] = ["Selecione um paciente ativo do workspace."] }),
+        FinancialEntrySaveStatus.NotFound => Results.NotFound(),
+        _ => throw new InvalidOperationException("Resultado inesperado ao editar lançamento financeiro.")
+    };
+});
+
+financialEntries.MapDelete("/{id:guid}", async (Guid id, HttpContext context, FinancialStore store) =>
+    await store.DeleteAsync(GetWorkspaceId(context.User), id) ? Results.NoContent() : Results.NotFound());
 
 app.Run();
 
@@ -300,13 +365,48 @@ static bool FixedTimeEquals(string left, string right)
     return CryptographicOperations.FixedTimeEquals(leftHash, rightHash);
 }
 
-static Dictionary<string, string[]> ValidateAppointment(AppointmentInput input)
+static (Dictionary<string, string[]> Errors, long AmountCents) ValidateFinancialEntry(FinancialEntryInput input)
+{
+    var errors = new Dictionary<string, string[]>();
+    if (string.IsNullOrWhiteSpace(input.Description))
+        errors[nameof(input.Description)] = ["Informe a descrição do lançamento."];
+    else if (input.Description.Trim().Length > 200)
+        errors[nameof(input.Description)] = ["A descrição deve ter no máximo 200 caracteres."];
+    if (input.Amount <= 0 || input.Amount > 999999999.99m || decimal.Round(input.Amount, 2) != input.Amount)
+        errors[nameof(input.Amount)] = ["Informe um valor positivo com até duas casas decimais."];
+    if (!string.Equals(input.Type, "revenue", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(input.Type, "expense", StringComparison.OrdinalIgnoreCase))
+        errors[nameof(input.Type)] = ["Selecione receita ou despesa."];
+    if (!string.Equals(input.Status, "paid", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(input.Status, "pending", StringComparison.OrdinalIgnoreCase))
+        errors[nameof(input.Status)] = ["Selecione pago ou pendente."];
+    if (input.EntryDate == default)
+        errors[nameof(input.EntryDate)] = ["Informe a data do lançamento."];
+    if (input.PatientId == Guid.Empty)
+        errors[nameof(input.PatientId)] = ["Selecione um paciente válido ou deixe o campo vazio."];
+
+    return (errors, errors.ContainsKey(nameof(input.Amount)) ? 0 : decimal.ToInt64(input.Amount * 100));
+}
+
+static Dictionary<string, string[]> ValidateAppointment(AppointmentInput input, bool allowCancelled = false)
 {
     var errors = new Dictionary<string, string[]>();
     if (input.PatientId == Guid.Empty)
         errors[nameof(input.PatientId)] = ["Selecione um paciente."];
     if (input.StartsAt == default || input.EndsAt == default || input.EndsAt <= input.StartsAt)
         errors[nameof(input.EndsAt)] = ["O término deve ser posterior ao início do compromisso."];
+    if (input.Amount < 0 || input.Amount > 999999999.99m || decimal.Round(input.Amount, 2) != input.Amount)
+        errors[nameof(input.Amount)] = ["Informe um valor igual ou maior que zero, com até duas casas decimais."];
+    if (!string.Equals(input.Modality, "in_person", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(input.Modality, "online", StringComparison.OrdinalIgnoreCase))
+        errors[nameof(input.Modality)] = ["Selecione uma modalidade válida."];
+    var validStatuses = allowCancelled
+        ? new[] { "scheduled", "confirmed", "attended", "missed", "cancelled" }
+        : new[] { "scheduled", "confirmed", "attended", "missed" };
+    if (!validStatuses.Contains(input.Status, StringComparer.OrdinalIgnoreCase))
+        errors[nameof(input.Status)] = ["Selecione um status válido."];
+    if (input.Notes?.Length > 2000)
+        errors[nameof(input.Notes)] = ["As observações devem ter no máximo 2000 caracteres."];
     return errors;
 }
 
@@ -352,7 +452,8 @@ static PatientResponse ToResponse(PatientRecord record) => new(
 
 static AppointmentResponse ToAppointmentResponse(AppointmentRecord record) => new(
     record.Id, record.PatientId, record.PatientName, record.StartsAt, record.EndsAt,
-    record.IsCancelled, record.CreatedAt, record.UpdatedAt);
+    record.IsCancelled, record.AmountCents / 100m, record.Modality, record.Status, record.Notes,
+    record.CreatedAt, record.UpdatedAt);
 
 static SessionResponse ToSessionResponse(SessionRecord record) => new(
     record.Id, record.SessionDate, record.Note, record.CreatedAt, record.UpdatedAt);
@@ -363,15 +464,26 @@ static SessionVersionResponse ToSessionVersionResponse(SessionVersionRecord reco
 static PatientTaskResponse ToPatientTaskResponse(PatientTaskRecord record) => new(
     record.Id, record.Description, record.DueDate, record.IsCompleted, record.CreatedAt, record.UpdatedAt);
 
+static FinancialEntryResponse ToFinancialEntryResponse(FinancialEntryRecord record) => new(
+    record.Id, record.PatientId, record.PatientName, record.Description, record.Type, record.Status,
+    record.AmountCents / 100m, record.EntryDate, record.CreatedAt, record.UpdatedAt);
+
 public sealed record LoginRequest(string Email, string Password);
 public sealed record UserResponse(string Name, string Email);
 public sealed record PatientInput(string Name, string? Contact);
 public sealed record PatientResponse(Guid Id, string Name, string? Contact, bool IsArchived, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
-public sealed record AppointmentInput(Guid PatientId, DateTimeOffset StartsAt, DateTimeOffset EndsAt);
-public sealed record AppointmentResponse(Guid Id, Guid PatientId, string PatientName, DateTimeOffset StartsAt, DateTimeOffset EndsAt, bool IsCancelled, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record AppointmentInput(
+    Guid PatientId, DateTimeOffset StartsAt, DateTimeOffset EndsAt,
+    decimal Amount = 0, string Modality = "in_person", string Status = "scheduled", string Notes = "");
+public sealed record AppointmentResponse(
+    Guid Id, Guid PatientId, string PatientName, DateTimeOffset StartsAt, DateTimeOffset EndsAt,
+    bool IsCancelled, decimal Amount, string Modality, string Status, string Notes,
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 public sealed record SessionInput(DateOnly SessionDate, string Note);
 public sealed record SessionResponse(Guid Id, DateOnly SessionDate, string Note, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 public sealed record SessionVersionResponse(int Version, DateOnly SessionDate, string Note, DateTimeOffset ChangedAt, string ChangedBy);
 public sealed record PatientTaskInput(string Description, DateOnly? DueDate, bool IsCompleted);
 public sealed record PatientTaskResponse(Guid Id, string Description, DateOnly? DueDate, bool IsCompleted, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record FinancialEntryInput(Guid? PatientId, string Description, string Type, string Status, decimal Amount, DateOnly EntryDate);
+public sealed record FinancialEntryResponse(Guid Id, Guid? PatientId, string? PatientName, string Description, string Type, string Status, decimal Amount, DateOnly EntryDate, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 

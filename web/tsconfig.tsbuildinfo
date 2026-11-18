@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/appointments.tsx","./src/home.tsx","./src/patientdetails.tsx","./src/patients.tsx","./src/api.ts","./src/main.tsx"],"version":"5.7.3"}
+{"root":["./src/app.tsx","./src/appointments.tsx","./src/finance.tsx","./src/home.tsx","./src/numerictext.tsx","./src/patientdetails.tsx","./src/patients.tsx","./src/api.ts","./src/main.tsx"],"version":"5.7.3"}

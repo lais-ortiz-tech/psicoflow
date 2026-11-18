@@ -8,6 +8,7 @@ import {
   faMagnifyingGlass,
 } from '@fortawesome/free-solid-svg-icons'
 import { api } from './api'
+import NumericText from './NumericText'
 import PatientDetails from './PatientDetails'
 
 type Patient = {
@@ -122,7 +123,7 @@ export default function Patients() {
         <div className="summary-card">
           <span className="summary-icon"><FontAwesomeIcon icon={faHospitalUser} /></span>
           <div>
-            <strong>{activeCount}</strong>
+            <strong><NumericText value={activeCount} /></strong>
             <span>{includeArchived ? 'cadastros exibidos' : 'pacientes ativos'}</span>
           </div>
         </div>
@@ -204,7 +205,7 @@ export default function Patients() {
                 <span>{patient.contact || 'Sem contato informado'}</span>
               </div>
               {patient.isArchived && <span className="status-pill">Arquivado</span>}
-              <time>{new Intl.DateTimeFormat('pt-BR').format(new Date(patient.updatedAt))}</time>
+              <time><NumericText value={new Intl.DateTimeFormat('pt-BR').format(new Date(patient.updatedAt))} /></time>
               {!patient.isArchived && (
                 <div className="row-actions">
                   <button className="text-button" onClick={() => startEdit(patient)}>Editar</button>

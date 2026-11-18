@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowLeft, faCalendarDays, faCirclePlus, faListCheck, faNotesMedical } from '@fortawesome/free-solid-svg-icons'
 import { api } from './api'
+import NumericText from './NumericText'
 
 type Patient = {
   id: string
@@ -307,7 +308,7 @@ export default function PatientDetails({
           </div>
           {latestSession ? (
             <>
-              <strong>{formatDate(latestSession.sessionDate)}</strong>
+              <strong><NumericText value={formatDate(latestSession.sessionDate)} /></strong>
               <button className="text-button" onClick={() => startEditSession(latestSession)}>
                 Abrir registro
               </button>
@@ -323,10 +324,10 @@ export default function PatientDetails({
           </div>
           {nextAppointment ? (
             <>
-              <strong>{formatDateTime(nextAppointment.startsAt)}</strong>
+              <strong><NumericText value={formatDateTime(nextAppointment.startsAt)} /></strong>
               <span>
-                até {new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' })
-                  .format(new Date(nextAppointment.endsAt))}
+                até <NumericText value={new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                  .format(new Date(nextAppointment.endsAt))} />
               </span>
             </>
           ) : (
@@ -342,12 +343,12 @@ export default function PatientDetails({
             <p>Nenhuma pendência em aberto.</p>
           ) : (
             <>
-              <strong>{openTasks.length} {openTasks.length === 1 ? 'pendência' : 'pendências'}</strong>
+              <strong><NumericText value={openTasks.length} /> {openTasks.length === 1 ? 'pendência' : 'pendências'}</strong>
               <ul className="overview-task-list">
                 {openTasks.slice(0, 3).map((task) => (
                   <li key={task.id}>
                     {task.description}
-                    {task.dueDate && <span> · Prazo: {formatDate(task.dueDate)}</span>}
+                    {task.dueDate && <span> · Prazo: <NumericText value={formatDate(task.dueDate)} /></span>}
                   </li>
                 ))}
               </ul>
@@ -377,8 +378,8 @@ export default function PatientDetails({
               <article className="detail-record" key={session.id}>
                 <div className="detail-record-heading">
                   <div>
-                    <strong>{formatDate(session.sessionDate)}</strong>
-                    <span>Atualizado em {formatDateTime(session.updatedAt)}</span>
+                    <strong><NumericText value={formatDate(session.sessionDate)} /></strong>
+                    <span>Atualizado em <NumericText value={formatDateTime(session.updatedAt)} /></span>
                   </div>
                   <div className="row-actions">
                     <button className="text-button" onClick={() => startEditSession(session)}>
@@ -398,8 +399,8 @@ export default function PatientDetails({
                     ) : (versionsBySession[session.id] ?? []).map((version) => (
                       <article className="version-item" key={version.version}>
                         <div>
-                          <strong>Versão {version.version} · {formatDate(version.sessionDate)}</strong>
-                          <span>{formatDateTime(version.changedAt)} · Alterado por {version.changedBy}</span>
+                          <strong>Versão <NumericText value={version.version} /> · <NumericText value={formatDate(version.sessionDate)} /></strong>
+                          <span><NumericText value={formatDateTime(version.changedAt)} /> · Alterado por {version.changedBy}</span>
                         </div>
                         <p className="record-note">{version.note}</p>
                       </article>
@@ -433,7 +434,7 @@ export default function PatientDetails({
                   <strong>{task.description}</strong>
                   <span>
                     {task.isCompleted ? 'Concluída' : 'Em aberto'}
-                    {task.dueDate && ` · Prazo: ${formatDate(task.dueDate)}`}
+                    {task.dueDate && <> · Prazo: <NumericText value={formatDate(task.dueDate)} /></>}
                   </span>
                 </div>
                 <div className="row-actions">

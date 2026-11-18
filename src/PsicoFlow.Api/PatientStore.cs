@@ -148,6 +148,29 @@ public sealed class PatientStore
             }
         }
 
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT COALESCE(MAX(Version), 0) FROM SchemaMigrations;";
+            var version = Convert.ToInt32(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+            if (version < 4)
+            {
+                using var transaction = connection.BeginTransaction();
+                command.Transaction = transaction;
+                command.CommandText = """
+                    ALTER TABLE Appointments ADD COLUMN AmountCents INTEGER NOT NULL DEFAULT 0 CHECK (AmountCents >= 0);
+                    ALTER TABLE Appointments ADD COLUMN Modality TEXT NOT NULL DEFAULT 'in_person' CHECK (Modality IN ('in_person', 'online'));
+                    ALTER TABLE Appointments ADD COLUMN Status TEXT NOT NULL DEFAULT 'scheduled'
+                        CHECK (Status IN ('scheduled', 'confirmed', 'attended', 'missed', 'cancelled'));
+                    ALTER TABLE Appointments ADD COLUMN Notes TEXT NOT NULL DEFAULT '';
+                    UPDATE Appointments SET Status = 'cancelled' WHERE IsCancelled = 1;
+                    INSERT INTO SchemaMigrations (Version, AppliedAt) VALUES (4, $appliedAt);
+                    """;
+                command.Parameters.AddWithValue("$appliedAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+                await command.ExecuteNonQueryAsync();
+                transaction.Commit();
+            }
+        }
+
         await ImportLegacyJsonAsync(connection);
     }
 
@@ -156,7 +179,8 @@ public sealed class PatientStore
         await using var connection = await OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT a.Id, a.WorkspaceId, a.PatientId, p.Name, a.StartsAt, a.EndsAt, a.IsCancelled, a.CreatedAt, a.UpdatedAt
+            SELECT a.Id, a.WorkspaceId, a.PatientId, p.Name, a.StartsAt, a.EndsAt, a.IsCancelled,
+                a.AmountCents, a.Modality, a.Status, a.Notes, a.CreatedAt, a.UpdatedAt
             FROM Appointments a
             INNER JOIN Patients p ON p.Id = a.PatientId AND p.WorkspaceId = a.WorkspaceId
             WHERE a.WorkspaceId = $workspaceId AND ($includeCancelled = 1 OR a.IsCancelled = 0)
@@ -177,7 +201,8 @@ public sealed class PatientStore
         await using var connection = await OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT a.Id, a.WorkspaceId, a.PatientId, p.Name, a.StartsAt, a.EndsAt, a.IsCancelled, a.CreatedAt, a.UpdatedAt
+            SELECT a.Id, a.WorkspaceId, a.PatientId, p.Name, a.StartsAt, a.EndsAt, a.IsCancelled,
+                a.AmountCents, a.Modality, a.Status, a.Notes, a.CreatedAt, a.UpdatedAt
             FROM Appointments a
             INNER JOIN Patients p ON p.Id = a.PatientId AND p.WorkspaceId = a.WorkspaceId
             WHERE a.WorkspaceId = $workspaceId AND a.PatientId = $patientId
@@ -394,8 +419,10 @@ public sealed class PatientStore
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            INSERT INTO Appointments (Id, WorkspaceId, PatientId, StartsAt, EndsAt, IsCancelled, CreatedAt, UpdatedAt)
-            VALUES ($id, $workspaceId, $patientId, $startsAt, $endsAt, 0, $createdAt, $updatedAt);
+            INSERT INTO Appointments
+                (Id, WorkspaceId, PatientId, StartsAt, EndsAt, IsCancelled, AmountCents, Modality, Status, Notes, CreatedAt, UpdatedAt)
+            VALUES
+                ($id, $workspaceId, $patientId, $startsAt, $endsAt, 0, $amountCents, $modality, $status, $notes, $createdAt, $updatedAt);
             """;
         AddAppointmentParameters(command, appointment);
         await command.ExecuteNonQueryAsync();
@@ -404,12 +431,14 @@ public sealed class PatientStore
         return new AppointmentSaveResult(AppointmentSaveStatus.Success, saved);
     }
 
-    public async Task<AppointmentSaveResult> UpdateAppointmentAsync(string workspaceId, Guid id, Guid patientId, DateTimeOffset startsAt, DateTimeOffset endsAt)
+    public async Task<AppointmentSaveResult> UpdateAppointmentAsync(
+        string workspaceId, Guid id, Guid patientId, DateTimeOffset startsAt, DateTimeOffset endsAt,
+        long amountCents, string modality, string status, string notes)
     {
         await using var connection = await OpenConnectionAsync();
         using var transaction = connection.BeginTransaction();
         var existing = await FindAppointmentAsync(connection, transaction, workspaceId, id);
-        if (existing is null || existing.IsCancelled)
+        if (existing is null)
             return new AppointmentSaveResult(AppointmentSaveStatus.NotFound, null);
         if (!await IsActivePatientAsync(connection, transaction, workspaceId, patientId))
             return new AppointmentSaveResult(AppointmentSaveStatus.PatientUnavailable, null);
@@ -419,21 +448,33 @@ public sealed class PatientStore
             PatientId = patientId,
             StartsAt = startsAt,
             EndsAt = endsAt,
+            IsCancelled = status == "cancelled",
+            AmountCents = amountCents,
+            Modality = modality,
+            Status = status,
+            Notes = notes,
             UpdatedAt = DateTimeOffset.UtcNow
         };
-        if (await HasConflictAsync(connection, transaction, updated, id))
+        if (!updated.IsCancelled && await HasConflictAsync(connection, transaction, updated, id))
             return new AppointmentSaveResult(AppointmentSaveStatus.Conflict, null);
 
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
             UPDATE Appointments
-            SET PatientId = $patientId, StartsAt = $startsAt, EndsAt = $endsAt, UpdatedAt = $updatedAt
-            WHERE WorkspaceId = $workspaceId AND Id = $id AND IsCancelled = 0;
+            SET PatientId = $patientId, StartsAt = $startsAt, EndsAt = $endsAt,
+                IsCancelled = $isCancelled, AmountCents = $amountCents, Modality = $modality,
+                Status = $status, Notes = $notes, UpdatedAt = $updatedAt
+            WHERE WorkspaceId = $workspaceId AND Id = $id;
             """;
         command.Parameters.AddWithValue("$patientId", patientId.ToString("D"));
         command.Parameters.AddWithValue("$startsAt", ToDatabaseTime(updated.StartsAt));
         command.Parameters.AddWithValue("$endsAt", ToDatabaseTime(updated.EndsAt));
+        command.Parameters.AddWithValue("$isCancelled", updated.IsCancelled ? 1 : 0);
+        command.Parameters.AddWithValue("$amountCents", updated.AmountCents);
+        command.Parameters.AddWithValue("$modality", updated.Modality);
+        command.Parameters.AddWithValue("$status", updated.Status);
+        command.Parameters.AddWithValue("$notes", updated.Notes);
         command.Parameters.AddWithValue("$updatedAt", ToDatabaseTime(updated.UpdatedAt));
         command.Parameters.AddWithValue("$workspaceId", workspaceId);
         command.Parameters.AddWithValue("$id", id.ToString("D"));
@@ -449,7 +490,7 @@ public sealed class PatientStore
         await using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE Appointments
-            SET IsCancelled = 1, UpdatedAt = $updatedAt
+            SET IsCancelled = 1, Status = 'cancelled', UpdatedAt = $updatedAt
             WHERE WorkspaceId = $workspaceId AND Id = $id AND IsCancelled = 0;
             """;
         command.Parameters.AddWithValue("$updatedAt", ToDatabaseTime(DateTimeOffset.UtcNow));
@@ -459,7 +500,8 @@ public sealed class PatientStore
 
         await using var findCommand = connection.CreateCommand();
         findCommand.CommandText = """
-            SELECT a.Id, a.WorkspaceId, a.PatientId, p.Name, a.StartsAt, a.EndsAt, a.IsCancelled, a.CreatedAt, a.UpdatedAt
+            SELECT a.Id, a.WorkspaceId, a.PatientId, p.Name, a.StartsAt, a.EndsAt, a.IsCancelled,
+                a.AmountCents, a.Modality, a.Status, a.Notes, a.CreatedAt, a.UpdatedAt
             FROM Appointments a
             INNER JOIN Patients p ON p.Id = a.PatientId AND p.WorkspaceId = a.WorkspaceId
             WHERE a.WorkspaceId = $workspaceId AND a.Id = $id;
@@ -468,6 +510,16 @@ public sealed class PatientStore
         findCommand.Parameters.AddWithValue("$id", id.ToString("D"));
         await using var reader = await findCommand.ExecuteReaderAsync();
         return await reader.ReadAsync() ? ReadAppointment(reader) : null;
+    }
+
+    public async Task<bool> DeleteAppointmentAsync(string workspaceId, Guid id)
+    {
+        await using var connection = await OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM Appointments WHERE WorkspaceId = $workspaceId AND Id = $id;";
+        command.Parameters.AddWithValue("$workspaceId", workspaceId);
+        command.Parameters.AddWithValue("$id", id.ToString("D"));
+        return await command.ExecuteNonQueryAsync() > 0;
     }
 
     public async Task<IReadOnlyList<PatientRecord>> ListAsync(string workspaceId)
@@ -787,7 +839,8 @@ public sealed class PatientStore
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT a.Id, a.WorkspaceId, a.PatientId, p.Name, a.StartsAt, a.EndsAt, a.IsCancelled, a.CreatedAt, a.UpdatedAt
+            SELECT a.Id, a.WorkspaceId, a.PatientId, p.Name, a.StartsAt, a.EndsAt, a.IsCancelled,
+                a.AmountCents, a.Modality, a.Status, a.Notes, a.CreatedAt, a.UpdatedAt
             FROM Appointments a
             INNER JOIN Patients p ON p.Id = a.PatientId AND p.WorkspaceId = a.WorkspaceId
             WHERE a.WorkspaceId = $workspaceId AND a.Id = $id;
@@ -805,6 +858,10 @@ public sealed class PatientStore
         command.Parameters.AddWithValue("$patientId", appointment.PatientId.ToString("D"));
         command.Parameters.AddWithValue("$startsAt", ToDatabaseTime(appointment.StartsAt));
         command.Parameters.AddWithValue("$endsAt", ToDatabaseTime(appointment.EndsAt));
+        command.Parameters.AddWithValue("$amountCents", appointment.AmountCents);
+        command.Parameters.AddWithValue("$modality", appointment.Modality);
+        command.Parameters.AddWithValue("$status", appointment.Status);
+        command.Parameters.AddWithValue("$notes", appointment.Notes);
         command.Parameters.AddWithValue("$createdAt", ToDatabaseTime(appointment.CreatedAt));
         command.Parameters.AddWithValue("$updatedAt", ToDatabaseTime(appointment.UpdatedAt));
     }
@@ -820,8 +877,12 @@ public sealed class PatientStore
         DateTimeOffset.Parse(reader.GetString(4), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
         DateTimeOffset.Parse(reader.GetString(5), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
         reader.GetInt64(6) != 0,
-        DateTimeOffset.Parse(reader.GetString(7), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
-        DateTimeOffset.Parse(reader.GetString(8), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind));
+        reader.GetInt64(7),
+        reader.GetString(8),
+        reader.GetString(9),
+        reader.GetString(10),
+        DateTimeOffset.Parse(reader.GetString(11), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+        DateTimeOffset.Parse(reader.GetString(12), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind));
 
     private async Task<SqliteConnection> OpenConnectionAsync()
     {
@@ -886,6 +947,10 @@ public sealed record AppointmentRecord(
     DateTimeOffset StartsAt,
     DateTimeOffset EndsAt,
     bool IsCancelled,
+    long AmountCents,
+    string Modality,
+    string Status,
+    string Notes,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
