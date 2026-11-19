@@ -160,7 +160,14 @@
     box-shadow: 0 0 0 3px #4fb28640
 }
 
+.patient-modal { width: min(680px, 100%) }
+.patient-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px }
+.patient-form-time-fee { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px }
+.patient-form-grid label, .patient-form-time-fee label { min-width: 0 }
+.patient-modal textarea { min-height: 70px }
+
 @media(max-width:560px) {
+    .patient-form-grid { grid-template-columns: 1fr }
 
     .summary-row {
         align-items: stretch;

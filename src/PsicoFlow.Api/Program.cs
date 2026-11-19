@@ -93,7 +93,10 @@ patients.MapGet("", async (HttpContext context, PatientStore store, string? sear
     var records = await store.ListAsync(workspaceId);
     var query = records.Where(patient => includeArchived == true || !patient.IsArchived);
     if (!string.IsNullOrWhiteSpace(search))
-        query = query.Where(patient => patient.Name.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase) || (patient.Contact?.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false));
+        query = query.Where(patient => patient.Name.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase)
+            || (patient.Contact?.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false)
+            || (patient.Phone?.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false)
+            || (patient.Email?.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false));
     return Results.Ok(query.OrderBy(patient => patient.Name).Select(ToResponse));
 });
 
@@ -110,15 +113,8 @@ patients.MapPost("", async (PatientInput input, HttpContext context, PatientStor
         return Results.ValidationProblem(errors);
 
     var now = DateTimeOffset.UtcNow;
-    var record = new PatientRecord
-    {
-        Id = Guid.NewGuid(),
-        WorkspaceId = GetWorkspaceId(context.User),
-        Name = input.Name.Trim(),
-        Contact = NormalizeContact(input.Contact),
-        CreatedAt = now,
-        UpdatedAt = now
-    };
+    var record = ToPatientRecord(input, GetWorkspaceId(context.User), Guid.NewGuid(), now);
+    record.CreatedAt = now;
     await store.AddAsync(record);
     return Results.Created($"/api/patients/{record.Id}", ToResponse(record));
 });
@@ -129,7 +125,7 @@ patients.MapPut("/{id:guid}", async (Guid id, PatientInput input, HttpContext co
     if (errors.Count > 0)
         return Results.ValidationProblem(errors);
 
-    var updated = await store.UpdateAsync(GetWorkspaceId(context.User), id, input.Name.Trim(), NormalizeContact(input.Contact));
+    var updated = await store.UpdateAsync(ToPatientRecord(input, GetWorkspaceId(context.User), id, DateTimeOffset.UtcNow));
     if (updated is null)
         return Results.NotFound();
     if (updated.IsArchived)
@@ -439,16 +435,42 @@ static Dictionary<string, string[]> Validate(PatientInput input)
         errors[nameof(input.Name)] = ["Informe o nome do paciente."];
     else if (input.Name.Trim().Length > 150)
         errors[nameof(input.Name)] = ["O nome deve ter no máximo 150 caracteres."];
-    if (input.Contact?.Trim().Length > 200)
-        errors[nameof(input.Contact)] = ["O contato deve ter no máximo 200 caracteres."];
+    if (input.Contact?.Trim().Length > 200 || input.Phone?.Trim().Length > 200 || input.Email?.Trim().Length > 200 || input.Profession?.Trim().Length > 150)
+        errors["Contact"] = ["Contato ou profissão excede o limite permitido."];
+    if (input.Email is { Length: > 0 } && !new System.ComponentModel.DataAnnotations.EmailAddressAttribute().IsValid(input.Email.Trim()))
+        errors[nameof(input.Email)] = ["Informe um e-mail válido."];
+    if (input.Frequency is not (null or "weekly" or "biweekly" or "monthly" or "other"))
+        errors[nameof(input.Frequency)] = ["Selecione uma frequência válida."];
+    if (input.PatientStatus is not (null or "active" or "inactive"))
+        errors[nameof(input.PatientStatus)] = ["Selecione uma situação válida."];
+    if (input.UsualDay is not (null or "" or "monday" or "tuesday" or "wednesday" or "thursday" or "friday" or "saturday" or "sunday"))
+        errors[nameof(input.UsualDay)] = ["Selecione um dia válido."];
+    if (input.UsualTime is { } time && time.Ticks % TimeSpan.TicksPerMinute != 0)
+        errors[nameof(input.UsualTime)] = ["Informe o horário com precisão de minutos."];
+    if (input.Fee < 0 || input.Fee > 10000000 || decimal.Round(input.Fee, 2) != input.Fee)
+        errors[nameof(input.Fee)] = ["Informe um valor válido com até duas casas decimais."];
+    if (input.ChiefComplaint?.Length > 5000 || input.Observations?.Length > 5000)
+        errors["Notes"] = ["Cada observação deve ter no máximo 5000 caracteres."];
     return errors;
 }
 
 static string? NormalizeContact(string? contact) =>
     string.IsNullOrWhiteSpace(contact) ? null : contact.Trim();
 
+static PatientRecord ToPatientRecord(PatientInput input, string workspaceId, Guid id, DateTimeOffset now) => new()
+{
+    Id = id, WorkspaceId = workspaceId, Name = input.Name.Trim(), Contact = NormalizeContact(input.Contact),
+    Phone = NormalizeContact(input.Phone), Email = NormalizeContact(input.Email), BirthDate = input.BirthDate,
+    Profession = NormalizeContact(input.Profession), Frequency = input.Frequency ?? "weekly",
+    PatientStatus = input.PatientStatus ?? "active", UsualDay = NormalizeContact(input.UsualDay),
+    UsualTime = input.UsualTime, FeeCents = decimal.ToInt64(input.Fee * 100),
+    ChiefComplaint = NormalizeContact(input.ChiefComplaint), Observations = NormalizeContact(input.Observations), UpdatedAt = now
+};
+
 static PatientResponse ToResponse(PatientRecord record) => new(
-    record.Id, record.Name, record.Contact, record.IsArchived, record.CreatedAt, record.UpdatedAt);
+    record.Id, record.Name, record.Contact, record.IsArchived, record.CreatedAt, record.UpdatedAt,
+    record.Phone, record.Email, record.BirthDate, record.Profession, record.Frequency, record.PatientStatus,
+    record.UsualDay, record.UsualTime, record.FeeCents / 100m, record.ChiefComplaint, record.Observations);
 
 static AppointmentResponse ToAppointmentResponse(AppointmentRecord record) => new(
     record.Id, record.PatientId, record.PatientName, record.StartsAt, record.EndsAt,
@@ -470,8 +492,12 @@ static FinancialEntryResponse ToFinancialEntryResponse(FinancialEntryRecord reco
 
 public sealed record LoginRequest(string Email, string Password);
 public sealed record UserResponse(string Name, string Email);
-public sealed record PatientInput(string Name, string? Contact);
-public sealed record PatientResponse(Guid Id, string Name, string? Contact, bool IsArchived, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record PatientInput(string Name, string? Contact, string? Phone, string? Email, DateOnly? BirthDate,
+    string? Profession, string? Frequency, string? PatientStatus, string? UsualDay, TimeOnly? UsualTime,
+    decimal Fee, string? ChiefComplaint, string? Observations);
+public sealed record PatientResponse(Guid Id, string Name, string? Contact, bool IsArchived, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
+    string? Phone, string? Email, DateOnly? BirthDate, string? Profession, string Frequency, string PatientStatus,
+    string? UsualDay, TimeOnly? UsualTime, decimal Fee, string? ChiefComplaint, string? Observations);
 public sealed record AppointmentInput(
     Guid PatientId, DateTimeOffset StartsAt, DateTimeOffset EndsAt,
     decimal Amount = 0, string Modality = "in_person", string Status = "scheduled", string Notes = "");

@@ -16,14 +16,32 @@ type Patient = {
   id: string
   name: string
   contact: string | null
+  phone: string | null
+  email: string | null
+  birthDate: string | null
+  profession: string | null
+  frequency: string
+  patientStatus: string
+  usualDay: string | null
+  usualTime: string | null
+  fee: number
+  chiefComplaint: string | null
+  observations: string | null
   isArchived: boolean
   createdAt: string
   updatedAt: string
 }
 
-type PatientForm = { name: string; contact: string }
+type PatientForm = {
+  name: string; contact: string; phone: string; email: string; birthDate: string; profession: string
+  frequency: string; patientStatus: string; usualDay: string; usualTime: string; fee: string
+  chiefComplaint: string; observations: string
+}
 
-const emptyForm: PatientForm = { name: '', contact: '' }
+const emptyForm: PatientForm = {
+  name: '', contact: '', phone: '', email: '', birthDate: '', profession: '', frequency: 'weekly',
+  patientStatus: 'active', usualDay: '', usualTime: '', fee: '0', chiefComplaint: '', observations: '',
+}
 
 export default function Patients() {
   const [patients, setPatients] = useState<Patient[]>([])
@@ -69,7 +87,12 @@ export default function Patients() {
 
   function startEdit(patient: Patient) {
     setEditing(patient)
-    setForm({ name: patient.name, contact: patient.contact ?? '' })
+    setForm({
+      name: patient.name, contact: patient.contact ?? '', phone: patient.phone ?? '', email: patient.email ?? '',
+      birthDate: patient.birthDate ?? '', profession: patient.profession ?? '', frequency: patient.frequency,
+      patientStatus: patient.patientStatus, usualDay: patient.usualDay ?? '', usualTime: patient.usualTime?.slice(0, 5) ?? '',
+      fee: String(patient.fee), chiefComplaint: patient.chiefComplaint ?? '', observations: patient.observations ?? '',
+    })
     setError('')
     setShowForm(true)
   }
@@ -81,7 +104,10 @@ export default function Patients() {
     try {
       const saved = await api<Patient>(editing ? `/api/patients/${editing.id}` : '/api/patients', {
         method: editing ? 'PUT' : 'POST',
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form, birthDate: form.birthDate || null, usualTime: form.usualTime || null,
+          fee: Number(form.fee),
+        }),
       })
       setShowForm(false)
       setNotice(editing ? 'Cadastro atualizado.' : 'Paciente cadastrado.')
@@ -203,7 +229,7 @@ export default function Patients() {
                 >
                   {patient.name}
                 </button>
-                <span>{patient.contact || 'Sem contato informado'}</span>
+                <span>{patient.phone || patient.email || patient.contact || 'Sem contato informado'}</span>
               </div>
               {patient.isArchived && <span className="status-pill">Arquivado</span>}
               <time><NumericText value={new Intl.DateTimeFormat('pt-BR').format(new Date(patient.updatedAt))} /></time>
@@ -239,34 +265,78 @@ export default function Patients() {
             if (event.target === event.currentTarget) setShowForm(false)
           }}
         >
-          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="form-title">
+          <section className="modal patient-modal" role="dialog" aria-modal="true" aria-labelledby="form-title">
             <button className="modal-close" onClick={() => setShowForm(false)} aria-label="Fechar">
               ×
             </button>
-            <p className="eyebrow">CADASTRO ESSENCIAL</p>
+            <p className="eyebrow">CADASTRO DO PACIENTE</p>
             <h2 id="form-title">{editing ? 'Editar paciente' : 'Novo paciente'}</h2>
-            <p className="muted">
-              Inclua apenas os dados necessários para identificar o cadastro.
-            </p>
+            <p className="muted">Preencha os dados necessários para o cadastro.</p>
             <form className="form-stack" onSubmit={savePatient}>
               <label>
                 Nome completo <span className="required">*</span>
-                <input
-                  autoFocus
-                  maxLength={150}
-                  value={form.name}
-                  onChange={(event) => setForm({ ...form, name: event.target.value })}
-                  required
-                />
+                <input autoFocus maxLength={150} value={form.name} placeholder="Nome do paciente"
+                  onChange={(event) => setForm({ ...form, name: event.target.value })} required />
               </label>
-              <label>
-                Contato <span className="optional">(opcional)</span>
-                <input
-                  maxLength={200}
-                  value={form.contact}
-                  onChange={(event) => setForm({ ...form, contact: event.target.value })}
-                  placeholder="Telefone ou e-mail"
-                />
+              {editing?.contact && (
+                <label>Contato anterior
+                  <input maxLength={200} value={form.contact}
+                    onChange={(event) => setForm({ ...form, contact: event.target.value })} />
+                </label>
+              )}
+              <div className="patient-form-grid">
+                <label>Telefone
+                  <input type="tel" maxLength={200} placeholder="(11) 90000-0000" value={form.phone}
+                    onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+                </label>
+                <label>E-mail
+                  <input type="email" maxLength={200} placeholder="email@exemplo.com" value={form.email}
+                    onChange={(event) => setForm({ ...form, email: event.target.value })} />
+                </label>
+                <label>Nascimento
+                  <input type="date" value={form.birthDate}
+                    onChange={(event) => setForm({ ...form, birthDate: event.target.value })} />
+                </label>
+                <label>Profissão
+                  <input maxLength={150} placeholder="Opcional" value={form.profession}
+                    onChange={(event) => setForm({ ...form, profession: event.target.value })} />
+                </label>
+                <label>Frequência
+                  <select value={form.frequency} onChange={(event) => setForm({ ...form, frequency: event.target.value })}>
+                    <option value="weekly">Semanal</option><option value="biweekly">Quinzenal</option>
+                    <option value="monthly">Mensal</option><option value="other">Outra</option>
+                  </select>
+                </label>
+                <label>Situação
+                  <select value={form.patientStatus} onChange={(event) => setForm({ ...form, patientStatus: event.target.value })}>
+                    <option value="active">Ativo</option><option value="inactive">Inativo</option>
+                  </select>
+                </label>
+                <label>Dia habitual
+                  <select value={form.usualDay} onChange={(event) => setForm({ ...form, usualDay: event.target.value })}>
+                    <option value="">Selecione</option><option value="monday">Segunda-feira</option>
+                    <option value="tuesday">Terça-feira</option><option value="wednesday">Quarta-feira</option>
+                    <option value="thursday">Quinta-feira</option><option value="friday">Sexta-feira</option>
+                    <option value="saturday">Sábado</option><option value="sunday">Domingo</option>
+                  </select>
+                </label>
+                <div className="patient-form-time-fee">
+                  <label>Horário
+                    <input type="time" value={form.usualTime} onChange={(event) => setForm({ ...form, usualTime: event.target.value })} />
+                  </label>
+                  <label>Valor (R$)
+                    <input type="number" min="0" max="10000000" step="0.01" required value={form.fee}
+                      onChange={(event) => setForm({ ...form, fee: event.target.value })} />
+                  </label>
+                </div>
+              </div>
+              <label>Queixa principal
+                <textarea maxLength={5000} placeholder="Demanda inicial trazida pelo paciente" value={form.chiefComplaint}
+                  onChange={(event) => setForm({ ...form, chiefComplaint: event.target.value })} />
+              </label>
+              <label>Observações
+                <textarea maxLength={5000} value={form.observations}
+                  onChange={(event) => setForm({ ...form, observations: event.target.value })} />
               </label>
               {error && <p className="error" role="alert">{error}</p>}
               <div className="modal-actions">

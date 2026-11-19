@@ -171,6 +171,34 @@ public sealed class PatientStore
             }
         }
 
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT COALESCE(MAX(Version), 0) FROM SchemaMigrations;";
+            var version = Convert.ToInt32(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+            if (version < 5)
+            {
+                using var transaction = connection.BeginTransaction();
+                command.Transaction = transaction;
+                command.CommandText = """
+                    ALTER TABLE Patients ADD COLUMN Phone TEXT NULL;
+                    ALTER TABLE Patients ADD COLUMN Email TEXT NULL;
+                    ALTER TABLE Patients ADD COLUMN BirthDate TEXT NULL;
+                    ALTER TABLE Patients ADD COLUMN Profession TEXT NULL;
+                    ALTER TABLE Patients ADD COLUMN Frequency TEXT NOT NULL DEFAULT 'weekly';
+                    ALTER TABLE Patients ADD COLUMN PatientStatus TEXT NOT NULL DEFAULT 'active';
+                    ALTER TABLE Patients ADD COLUMN UsualDay TEXT NULL;
+                    ALTER TABLE Patients ADD COLUMN UsualTime TEXT NULL;
+                    ALTER TABLE Patients ADD COLUMN FeeCents INTEGER NOT NULL DEFAULT 0;
+                    ALTER TABLE Patients ADD COLUMN ChiefComplaint TEXT NULL;
+                    ALTER TABLE Patients ADD COLUMN Observations TEXT NULL;
+                    INSERT INTO SchemaMigrations (Version, AppliedAt) VALUES (5, $appliedAt);
+                    """;
+                command.Parameters.AddWithValue("$appliedAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+                await command.ExecuteNonQueryAsync();
+                transaction.Commit();
+            }
+        }
+
         await ImportLegacyJsonAsync(connection);
     }
 
@@ -527,7 +555,8 @@ public sealed class PatientStore
         await using var connection = await OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, WorkspaceId, Name, Contact, IsArchived, CreatedAt, UpdatedAt
+            SELECT Id, WorkspaceId, Name, Contact, IsArchived, CreatedAt, UpdatedAt,
+                   Phone, Email, BirthDate, Profession, Frequency, PatientStatus, UsualDay, UsualTime, FeeCents, ChiefComplaint, Observations
             FROM Patients
             WHERE WorkspaceId = $workspaceId;
             """;
@@ -553,29 +582,30 @@ public sealed class PatientStore
         await using var connection = await OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO Patients (Id, WorkspaceId, Name, Contact, IsArchived, CreatedAt, UpdatedAt)
-            VALUES ($id, $workspaceId, $name, $contact, $isArchived, $createdAt, $updatedAt);
+            INSERT INTO Patients (Id, WorkspaceId, Name, Contact, IsArchived, CreatedAt, UpdatedAt,
+                Phone, Email, BirthDate, Profession, Frequency, PatientStatus, UsualDay, UsualTime, FeeCents, ChiefComplaint, Observations)
+            VALUES ($id, $workspaceId, $name, $contact, $isArchived, $createdAt, $updatedAt,
+                $phone, $email, $birthDate, $profession, $frequency, $patientStatus, $usualDay, $usualTime, $feeCents, $chiefComplaint, $observations);
             """;
         AddPatientParameters(command, patient);
         await command.ExecuteNonQueryAsync();
     }
 
-    public async Task<PatientRecord?> UpdateAsync(string workspaceId, Guid id, string name, string? contact)
+    public async Task<PatientRecord?> UpdateAsync(PatientRecord patient)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE Patients
-            SET Name = $name, Contact = $contact, UpdatedAt = $updatedAt
+            SET Name = $name, Contact = $contact, UpdatedAt = $updatedAt, Phone = $phone, Email = $email,
+                BirthDate = $birthDate, Profession = $profession, Frequency = $frequency, PatientStatus = $patientStatus,
+                UsualDay = $usualDay, UsualTime = $usualTime, FeeCents = $feeCents,
+                ChiefComplaint = $chiefComplaint, Observations = $observations
             WHERE WorkspaceId = $workspaceId AND Id = $id AND IsArchived = 0;
             """;
-        command.Parameters.AddWithValue("$name", name);
-        command.Parameters.AddWithValue("$contact", (object?)contact ?? DBNull.Value);
-        command.Parameters.AddWithValue("$updatedAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
-        command.Parameters.AddWithValue("$workspaceId", workspaceId);
-        command.Parameters.AddWithValue("$id", id.ToString("D"));
+        AddPatientParameters(command, patient);
         await command.ExecuteNonQueryAsync();
-        return await FindAsync(connection, workspaceId, id);
+        return await FindAsync(connection, patient.WorkspaceId, patient.Id);
     }
 
     public async Task<PatientRecord?> ArchiveAsync(string workspaceId, Guid id)
@@ -895,7 +925,8 @@ public sealed class PatientStore
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, WorkspaceId, Name, Contact, IsArchived, CreatedAt, UpdatedAt
+            SELECT Id, WorkspaceId, Name, Contact, IsArchived, CreatedAt, UpdatedAt,
+                   Phone, Email, BirthDate, Profession, Frequency, PatientStatus, UsualDay, UsualTime, FeeCents, ChiefComplaint, Observations
             FROM Patients
             WHERE WorkspaceId = $workspaceId AND Id = $id;
             """;
@@ -914,6 +945,17 @@ public sealed class PatientStore
         command.Parameters.AddWithValue("$isArchived", patient.IsArchived ? 1 : 0);
         command.Parameters.AddWithValue("$createdAt", patient.CreatedAt.ToString("O", CultureInfo.InvariantCulture));
         command.Parameters.AddWithValue("$updatedAt", patient.UpdatedAt.ToString("O", CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$phone", (object?)patient.Phone ?? DBNull.Value);
+        command.Parameters.AddWithValue("$email", (object?)patient.Email ?? DBNull.Value);
+        command.Parameters.AddWithValue("$birthDate", (object?)patient.BirthDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? DBNull.Value);
+        command.Parameters.AddWithValue("$profession", (object?)patient.Profession ?? DBNull.Value);
+        command.Parameters.AddWithValue("$frequency", patient.Frequency);
+        command.Parameters.AddWithValue("$patientStatus", patient.PatientStatus);
+        command.Parameters.AddWithValue("$usualDay", (object?)patient.UsualDay ?? DBNull.Value);
+        command.Parameters.AddWithValue("$usualTime", (object?)patient.UsualTime?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? DBNull.Value);
+        command.Parameters.AddWithValue("$feeCents", patient.FeeCents);
+        command.Parameters.AddWithValue("$chiefComplaint", (object?)patient.ChiefComplaint ?? DBNull.Value);
+        command.Parameters.AddWithValue("$observations", (object?)patient.Observations ?? DBNull.Value);
     }
 
     private static PatientRecord ReadPatient(SqliteDataReader reader) => new()
@@ -924,7 +966,18 @@ public sealed class PatientStore
         Contact = reader.IsDBNull(3) ? null : reader.GetString(3),
         IsArchived = reader.GetInt64(4) != 0,
         CreatedAt = DateTimeOffset.Parse(reader.GetString(5), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
-        UpdatedAt = DateTimeOffset.Parse(reader.GetString(6), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)
+        UpdatedAt = DateTimeOffset.Parse(reader.GetString(6), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+        Phone = reader.IsDBNull(7) ? null : reader.GetString(7),
+        Email = reader.IsDBNull(8) ? null : reader.GetString(8),
+        BirthDate = reader.IsDBNull(9) ? null : DateOnly.ParseExact(reader.GetString(9), "yyyy-MM-dd", CultureInfo.InvariantCulture),
+        Profession = reader.IsDBNull(10) ? null : reader.GetString(10),
+        Frequency = reader.GetString(11),
+        PatientStatus = reader.GetString(12),
+        UsualDay = reader.IsDBNull(13) ? null : reader.GetString(13),
+        UsualTime = reader.IsDBNull(14) ? null : TimeOnly.ParseExact(reader.GetString(14), "HH:mm", CultureInfo.InvariantCulture),
+        FeeCents = reader.GetInt64(15),
+        ChiefComplaint = reader.IsDBNull(16) ? null : reader.GetString(16),
+        Observations = reader.IsDBNull(17) ? null : reader.GetString(17)
     };
 }
 
@@ -934,6 +987,17 @@ public sealed class PatientRecord
     public string WorkspaceId { get; set; } = "";
     public string Name { get; set; } = "";
     public string? Contact { get; set; }
+    public string? Phone { get; set; }
+    public string? Email { get; set; }
+    public DateOnly? BirthDate { get; set; }
+    public string? Profession { get; set; }
+    public string Frequency { get; set; } = "weekly";
+    public string PatientStatus { get; set; } = "active";
+    public string? UsualDay { get; set; }
+    public TimeOnly? UsualTime { get; set; }
+    public long FeeCents { get; set; }
+    public string? ChiefComplaint { get; set; }
+    public string? Observations { get; set; }
     public bool IsArchived { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }

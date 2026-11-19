@@ -44,7 +44,7 @@ A conta está apenas em `appsettings.Development.json` para demonstração; não
 - Pendências vinculadas ao paciente, com prazo opcional, edição e conclusão.
 - Agenda para criar, consultar, editar e cancelar compromissos vinculados a pacientes ativos.
 - Validação de conflitos por sobreposição de horários em compromissos não cancelados do workspace; horários adjacentes são permitidos.
-- Campos cadastrais mínimos: nome obrigatório e contato opcional; não há data de nascimento.
+- Cadastro de pacientes com nome obrigatório, telefone, e-mail, nascimento, profissão, frequência, situação, dia e horário habituais, valor, queixa principal e observações. Contatos cadastrados anteriormente são preservados. A situação cadastral não arquiva o paciente nem cria compromissos ou lançamentos financeiros automaticamente.
 - Sessões, versões e pendências são armazenadas no SQLite local e sempre consultadas no escopo do workspace e do paciente autenticado.
 - O workspace é obtido exclusivamente da identidade autenticada no servidor; identificadores de pacientes de outro workspace não são retornados.
 - A listagem padrão omite arquivados; a opção “Mostrar arquivados” permite consultá-los.

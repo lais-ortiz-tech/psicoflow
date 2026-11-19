@@ -9,6 +9,8 @@ type Patient = {
   id: string
   name: string
   contact: string | null
+  phone: string | null
+  email: string | null
   isArchived: boolean
   createdAt: string
   updatedAt: string
@@ -271,7 +273,7 @@ export default function PatientDetails({
           <p className="eyebrow">PRONTUÁRIO DO PACIENTE</p>
           <h1>{patient.name}</h1>
           <p className="muted">
-            {patient.contact || 'Sem contato informado'}
+            {[patient.phone, patient.email, patient.contact].filter(Boolean).join(' · ') || 'Sem contato informado'}
             {patient.isArchived && <span className="status-pill patient-archived-pill">Arquivado</span>}
           </p>
         </div>
